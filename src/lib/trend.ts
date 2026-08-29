@@ -12,9 +12,10 @@ export type Trend = {
 };
 
 export function summarise(logs: readonly PoopLog[], now = Date.now()): Trend {
-  const recent = logs.filter(
-    (log) => now - new Date(log.loggedAt).getTime() <= WEEK_MS
-  );
+  const recent = logs.filter((log) => {
+    const elapsed = now - new Date(log.loggedAt).getTime();
+    return elapsed >= 0 && elapsed <= WEEK_MS;
+  });
   const average =
     recent.length === 0
       ? null

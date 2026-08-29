@@ -1,15 +1,19 @@
 /* loglog service worker: offline shell + immutable asset cache. */
 const CACHE_VERSION = "loglog-v1";
-const SHELL = ["/", "/index.html", "/manifest.json", "/favicon.ico"];
+const OPTIONAL_SHELL = ["/", "/manifest.json", "/favicon.ico"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
       .open(CACHE_VERSION)
-      // Individually, so one missing file cannot fail the whole install.
-      .then((cache) =>
-        Promise.allSettled(SHELL.map((url) => cache.add(url)))
-      )
+      .then(async (cache) => {
+        // Offline navigation depends on this entry, so installation must fail
+        // if it cannot be cached. The remaining shell assets are optional.
+        await cache.add("/index.html");
+        await Promise.allSettled(
+          OPTIONAL_SHELL.map((url) => cache.add(url))
+        );
+      })
       .then(() => self.skipWaiting())
   );
 });

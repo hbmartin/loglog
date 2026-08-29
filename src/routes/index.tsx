@@ -95,7 +95,10 @@ function DogListPage() {
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") submit();
-              if (event.key === "Escape") setAdding(false);
+              if (event.key === "Escape") {
+                setAdding(false);
+                setName("");
+              }
             }}
           />
           <Button onClick={submit} disabled={name.trim() === ""}>

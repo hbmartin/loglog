@@ -17,7 +17,7 @@ const STORAGE_KEY = "loglog:v1";
 const dogSchema = z.object({
   id: z.string(),
   name: z.string(),
-  createdAt: z.string(),
+  createdAt: z.iso.datetime(),
 });
 
 const logSchema = z.object({
@@ -34,7 +34,7 @@ const logSchema = z.object({
   ]),
   color: z.enum(POOP_COLORS).nullable(),
   flags: z.array(z.enum(POOP_FLAGS)),
-  loggedAt: z.string(),
+  loggedAt: z.iso.datetime(),
 });
 
 const storeSchema = z.object({
@@ -90,6 +90,17 @@ function write(next: Store): void {
   }
 }
 
+function mutate(update: (current: Store) => Store): void {
+  // Rebase every mutation on the latest persisted snapshot. This prevents a
+  // tab with a stale in-memory cache from restoring records another tab added
+  // or deleted before its storage event was delivered.
+  const current =
+    typeof window === "undefined"
+      ? read()
+      : parseStore(window.localStorage.getItem(STORAGE_KEY));
+  write(update(current));
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
 
@@ -130,8 +141,7 @@ export function addDog(name: string): Dog | null {
     name: trimmed,
     createdAt: new Date().toISOString(),
   };
-  const current = read();
-  write({ ...current, dogs: [...current.dogs, dog] });
+  mutate((current) => ({ ...current, dogs: [...current.dogs, dog] }));
   return dog;
 }
 
@@ -149,14 +159,15 @@ export function addLog(input: {
     flags: input.flags,
     loggedAt: new Date().toISOString(),
   };
-  const current = read();
-  write({ ...current, logs: [...current.logs, log] });
+  mutate((current) => ({ ...current, logs: [...current.logs, log] }));
   return log;
 }
 
 export function deleteLog(id: string): void {
-  const current = read();
-  write({ ...current, logs: current.logs.filter((log) => log.id !== id) });
+  mutate((current) => ({
+    ...current,
+    logs: current.logs.filter((log) => log.id !== id),
+  }));
 }
 
 /** Newest first. */

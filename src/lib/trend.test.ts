@@ -40,6 +40,13 @@ describe("summarise", () => {
   it("excludes off-ideal scores older than a week", () => {
     expect(summarise([log(8, 7)], NOW).offIdeal).toBe(0);
   });
+
+  it("includes the seven-day boundary but excludes future logs", () => {
+    const trend = summarise([log(7, 2), log(-1, 7)], NOW);
+    expect(trend.lastWeek).toBe(1);
+    expect(trend.average).toBe(2);
+    expect(trend.offIdeal).toBe(0);
+  });
 });
 
 describe("timeAgo", () => {

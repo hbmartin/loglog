@@ -34,13 +34,13 @@ The service worker is registered in production builds only, so offline behaviour
 
 ## Deploying to Cloudflare
 
-`wrangler.jsonc` declares an **assets-only Worker** — there is no Worker script, because there is no
+`wrangler.json` declares an **assets-only Worker** — there is no Worker script, because there is no
 server. `not_found_handling: "single-page-application"` is what makes `/dog/<id>` survive a hard
 refresh.
 
 ```bash
 pnpm wrangler login
-pnpm deploy       # build + wrangler deploy
+pnpm run deploy   # build + wrangler deploy
 ```
 
 ## Stack
@@ -53,7 +53,7 @@ composition is the `render={<El/>}` prop, never `asChild`.
 
 ## Project structure
 
-```
+```text
 index.html          # SPA entry; pre-paint theme script, manifest + icon links
 src/
   main.tsx          # createRoot + service worker registration
