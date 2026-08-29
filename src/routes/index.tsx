@@ -1,167 +1,136 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ChevronRight, Download, Plus, X } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
-import {
-  Code,
-  Rocket,
-  Zap,
-  Palette,
-  Server,
-  Layers,
-} from "lucide-react";
-import { getServerInfo } from "@/server/functions";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { buildCsv, csvFilename, downloadCsv } from "@/lib/csv";
+import { scoreInfo } from "@/lib/purina";
+import { addDog, logsForDog, useStore } from "@/lib/storage";
+import { timeAgo } from "@/lib/trend";
 
 export const Route = createFileRoute("/")({
-  loader: () => getServerInfo(),
-  component: HomePage,
+  component: DogListPage,
 });
 
-const techStack = [
-  "React 19",
-  "TanStack Start",
-  "TanStack Router",
-  "TypeScript",
-  "Tailwind CSS 4",
-  "shadcn/ui",
-  "Base UI",
-  "Nitro",
-  "Vite + Rolldown",
-];
+function DogListPage() {
+  const store = useStore();
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
 
-function HomePage() {
-  const { message, timestamp, environment } = Route.useLoaderData();
+  const dogs = [...store.dogs].sort((a, b) => a.name.localeCompare(b.name));
+
+  const submit = () => {
+    if (addDog(name) !== null) {
+      setName("");
+      setAdding(false);
+    }
+  };
 
   return (
-    <div className="container mx-auto py-16 px-4">
-      <div className="absolute top-4 right-4">
-        <ModeToggle />
-      </div>
-
-      <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold mb-4">
-          Eser's TanStack Start Boilerplate
-        </h1>
-        <p className="text-muted-foreground text-lg max-w-2xl mx-auto mb-6">
-          A minimal, type-safe full-stack React starter with modern tooling.
-          Built with TanStack Start, React 19, shadcn/ui, and Nitro.
-        </p>
-        <div className="flex flex-wrap justify-center gap-2">
-          {techStack.map((tech) => (
-            <Badge key={tech} variant="secondary">
-              {tech}
-            </Badge>
-          ))}
+    <main className="mx-auto w-full max-w-md px-4 pt-6 pb-12">
+      <header className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">loglog</h1>
+          <p className="text-muted-foreground text-sm">
+            Purina fecal scoring, kept on this device.
+          </p>
         </div>
-      </div>
+        <ModeToggle />
+      </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
-        <Card>
-          <CardHeader>
-            <Zap className="w-8 h-8 mb-2 text-yellow-500" />
-            <CardTitle>Lightning Fast</CardTitle>
-            <CardDescription>
-              Vite + Rolldown for sub-second builds. Hot module replacement that
-              just works.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <Code className="w-8 h-8 mb-2 text-blue-500" />
-            <CardTitle>Type Safe</CardTitle>
-            <CardDescription>
-              End-to-end TypeScript with strict mode. Type-safe routing and
-              server functions.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <Server className="w-8 h-8 mb-2 text-green-500" />
-            <CardTitle>Server Functions</CardTitle>
-            <CardDescription>
-              Nitro-powered backend with RPC-style server calls. Full TypeScript
-              inference.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <Palette className="w-8 h-8 mb-2 text-pink-500" />
-            <CardTitle>Beautiful UI</CardTitle>
-            <CardDescription>
-              shadcn/ui components built on Base UI primitives. Accessible and
-              customizable.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <Layers className="w-8 h-8 mb-2 text-orange-500" />
-            <CardTitle>Tailwind CSS 4</CardTitle>
-            <CardDescription>
-              Latest Tailwind with CSS-first configuration. Dark mode with
-              system preference.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <Rocket className="w-8 h-8 mb-2 text-purple-500" />
-            <CardTitle>Full Stack SSR</CardTitle>
-            <CardDescription>
-              Server-side rendering with hydration. Deploy anywhere Nitro runs.
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      </div>
-
-      <Card className="max-w-md mx-auto">
-        <CardHeader>
-          <CardTitle className="text-lg">Server Function Demo</CardTitle>
-          <CardDescription>
-            Data fetched from a Nitro server function
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          <p className="text-sm">
-            <span className="font-medium">Message:</span> {message}
+      {dogs.length === 0 && !adding ? (
+        <Card className="mb-4 p-6 text-center">
+          <p className="font-medium">No one is being tracked yet.</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Add a dog (or a hairless ape) to start logging.
           </p>
-          <p className="text-sm">
-            <span className="font-medium">Environment:</span> {environment}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            <span className="font-medium">Timestamp:</span> {timestamp}
-          </p>
-        </CardContent>
-      </Card>
+        </Card>
+      ) : null}
 
-      <div className="text-center mt-12">
+      <ul className="mb-4 flex flex-col gap-2">
+        {dogs.map((dog) => {
+          const logs = logsForDog(store, dog.id);
+          const latest = logs[0];
+          return (
+            <li key={dog.id}>
+              <Link
+                to="/dog/$dogId"
+                params={{ dogId: dog.id }}
+                className="block rounded-xl"
+              >
+                <Card className="hover:bg-muted/50 flex flex-row items-center gap-3 p-4 transition-colors">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-medium">{dog.name}</p>
+                    <p className="text-muted-foreground text-sm">
+                      {latest === undefined
+                        ? "No logs yet"
+                        : `${timeAgo(latest.loggedAt)} · ${scoreInfo(latest.score).label}`}
+                    </p>
+                  </div>
+                  {latest === undefined ? null : (
+                    <Badge
+                      variant={scoreInfo(latest.score).ideal ? "secondary" : "destructive"}
+                    >
+                      {latest.score}
+                    </Badge>
+                  )}
+                  <ChevronRight className="text-muted-foreground size-4 shrink-0" />
+                </Card>
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+
+      {adding ? (
+        <Card className="mb-4 flex flex-row items-center gap-2 p-3">
+          <Input
+            autoFocus
+            value={name}
+            placeholder="Name"
+            aria-label="New dog name"
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") submit();
+              if (event.key === "Escape") setAdding(false);
+            }}
+          />
+          <Button onClick={submit} disabled={name.trim() === ""}>
+            Save
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label="Cancel"
+            onClick={() => {
+              setAdding(false);
+              setName("");
+            }}
+          >
+            <X />
+          </Button>
+        </Card>
+      ) : (
+        <Button className="w-full" size="lg" onClick={() => setAdding(true)}>
+          <Plus />
+          Add new dog
+        </Button>
+      )}
+
+      {store.logs.length > 0 ? (
         <Button
-          render={
-            <a
-              href="https://tanstack.com/start/latest"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Read the Docs
-            </a>
-          }
-        />
-      </div>
-    </div>
+          variant="ghost"
+          size="sm"
+          className="mt-6 w-full"
+          onClick={() => downloadCsv(buildCsv(store), csvFilename())}
+        >
+          <Download />
+          Export all logs as CSV
+        </Button>
+      ) : null}
+    </main>
   );
 }

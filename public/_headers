@@ -1,0 +1,11 @@
+# The service worker must be revalidated on every load, or a deploy can never
+# replace it.
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.json
+  Cache-Control: no-cache
+
+# Vite emits content-hashed filenames here.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

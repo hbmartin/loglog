@@ -31,4 +31,7 @@ Thumbs.db
 node_modules/
 
 # Build outputs
-.output/
+dist/
+
+# Cloudflare
+.wrangler/
