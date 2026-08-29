@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>loglog</title>
+    <meta
+      name="description"
+      content="Track your dog's poop on the Purina fecal scoring scale. Local-only, works offline."
+    />
+    <meta name="theme-color" content="#7b4b26" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="loglog" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="apple-touch-icon" href="/logo192.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <script>
+      // Resolve the theme before first paint so dark mode never flashes white.
+      (function () {
+        const storageKey = "vite-ui-theme";
+        const theme = localStorage.getItem(storageKey);
+        const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
+          .matches
+          ? "dark"
+          : "light";
+        const resolvedTheme =
+          theme === "system" || !theme ? systemTheme : theme;
+        document.documentElement.classList.add(resolvedTheme);
+      })();
+    </script>
+  </head>
+  <body class="min-h-screen bg-background font-sans antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
