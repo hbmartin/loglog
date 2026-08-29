@@ -1,5 +1,5 @@
 # versions
-FROM node:25-trixie-slim AS base
+FROM node:26-trixie-slim AS base
 
 # builder stage
 FROM base AS builder
