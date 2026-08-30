@@ -80,6 +80,12 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm run fmt:check
+
       - name: Test
         run: pnpm test
 

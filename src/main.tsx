@@ -12,7 +12,7 @@ if (rootElement === null) {
 createRoot(rootElement).render(
   <StrictMode>
     <RouterProvider router={getRouter()} />
-  </StrictMode>
+  </StrictMode>,
 );
 
 if (import.meta.env.PROD && "serviceWorker" in navigator) {
