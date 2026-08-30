@@ -1,3 +1,5 @@
+import { afterEach } from "vitest";
+
 /**
  * Installs a localStorage when Node's own stub has shadowed jsdom's.
  *
@@ -51,5 +53,18 @@ if (typeof document !== "undefined" && typeof localStorage === "undefined") {
     value: new MemoryStorage(),
     configurable: true,
     writable: true,
+  });
+}
+
+if (typeof document !== "undefined") {
+  /*
+   * ThemeProvider writes the resolved theme onto <html>, and testing-library's
+   * cleanup() unmounts the tree without touching it. Left behind, a case sees
+   * the class an earlier one applied and passes or fails on file order rather
+   * than on its own subject. Here rather than in one suite's afterEach because
+   * every jsdom suite that mounts the router mounts that provider.
+   */
+  afterEach(() => {
+    document.documentElement.className = "";
   });
 }

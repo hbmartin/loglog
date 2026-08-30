@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ChevronLeft, Download, Printer, Trash2 } from "lucide-react";
 import {
@@ -44,6 +44,10 @@ export const Route = createFileRoute("/dog/$dogId")({
 /** The one entry that earns a flourish. */
 const CENTENNIAL = 100;
 
+/** How long the save confirmation and the centennial flourish stay up. */
+const TOAST_MS = 2600;
+const CENTENNIAL_MS = 1800;
+
 function DogPage() {
   const { dogId } = Route.useParams();
   const store = useStore();
@@ -57,12 +61,24 @@ function DogPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [centennial, setCentennial] = useState(false);
 
-  // Every window below is measured from `now` rather than from each helper's
-  // own Date.now() default. Memoised on the logs alone, that default is
-  // captured at whatever moment the log list last changed and then frozen: an
-  // app left open overnight would still be counting an eight-day-old entry as
-  // "past 7 days", and only adding or deleting a log would move it.
-  const now = useNow();
+  // Both flourishes are on a timer, and saves arrive faster than those
+  // timers expire. Without a handle to cancel, the countdown from the
+  // previous save clears the toast a fraction of a second after the new one
+  // appeared; keeping the handles also stops a navigation mid-countdown
+  // firing into an unmounted page.
+  const toastTimer = useRef<number | null>(null);
+  const centennialTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (toastTimer.current !== null) {
+        window.clearTimeout(toastTimer.current);
+      }
+      if (centennialTimer.current !== null) {
+        window.clearTimeout(centennialTimer.current);
+      }
+    },
+    [],
+  );
 
   // store is referentially stable between writes and `now` steps once a
   // minute, so these recompute when the data actually changes rather than on
@@ -70,27 +86,47 @@ function DogPage() {
   // memoised on `series` and `label`, so a fresh object for either would
   // re-reconcile every dot, gridline and label in the SVG.
   const logs = useMemo(() => (dog === undefined ? [] : logsForDog(store, dog.id)), [store, dog]);
+
+  // Every window below is measured from `now` rather than from each helper's
+  // own Date.now() default. Memoised on the logs alone, that default is
+  // captured at whatever moment the log list last changed and then frozen: an
+  // app left open overnight would still be counting an eight-day-old entry as
+  // "past 7 days", and only adding or deleting a log would move it.
+  //
+  // The newest entry goes with it - logsForDog is newest first - because this
+  // is the screen that writes them. Without it a score tapped between ticks
+  // is dated after `now`, which every helper below reads as the future, and
+  // the tap it took to save moves nothing but the history list. See useNow.
+  const now = useNow(logs[0]?.loggedAt);
+
   const trend = useMemo(() => summarise(logs, now), [logs, now]);
   const series = useMemo(() => chartSeries(logs, now), [logs, now]);
   const streak = useMemo(() => regularity(logs, now), [logs, now]);
   const earned = useMemo(
-    () => achievements(logs, { exported: meta.exportedAt !== null }),
-    [logs, meta.exportedAt],
+    () => achievements(logs, { exported: meta.exportedAt !== null }, now),
+    [logs, meta.exportedAt, now],
   );
-  const offIdeal = useMemo(() => series.points.filter((point) => !point.ideal).length, [series]);
 
   // Hooks run before the notFound throw below, so this has to tolerate a dog
   // that does not exist; the empty label is never rendered.
+  //
+  // Plain clinical wording in either register, per the note at the top of
+  // lexicon.ts - a screen reader user should not have to decode a bit. The one
+  // exception is the heading it sends them to, which has to be the name that
+  // is actually on the page.
   const dogName = dog?.name;
-  const label = useMemo(
-    () =>
-      dogName === undefined
-        ? ""
-        : `${dogName}: Purina fecal score over the last 30 days. ${series.points.length} ${
-            series.points.length === 1 ? "log" : "logs"
-          }, ${offIdeal} outside the ideal 2–3 range. Every entry is listed under History below.`,
-    [dogName, series, offIdeal],
-  );
+  const historyHeading = copy.historyHeading;
+  const label = useMemo(() => {
+    if (dogName === undefined) {
+      return "";
+    }
+    // Counted here rather than in a memo of its own: it is derived from
+    // `series` and used nowhere else, so a separate memo only adds a
+    // dependency that can never invalidate on its own.
+    const offIdeal = series.points.filter((point) => !point.ideal).length;
+    const logged = `${series.points.length} ${series.points.length === 1 ? "log" : "logs"}`;
+    return `${dogName}: Purina fecal score over the last 30 days. ${logged}, ${offIdeal} outside the ideal 2–3 range. Every entry is listed under ${historyHeading}, below.`;
+  }, [dogName, series, historyHeading]);
 
   if (dog === undefined) {
     throw notFound();
@@ -116,11 +152,23 @@ function DogPage() {
     const note = timeOfDayNote(saved.loggedAt);
     const line = copy.toasts[Math.floor(Math.random() * copy.toasts.length)];
     setToast(note === null ? line : `${line} ${note}`);
-    window.setTimeout(() => setToast(null), 2600);
+    if (toastTimer.current !== null) {
+      window.clearTimeout(toastTimer.current);
+    }
+    toastTimer.current = window.setTimeout(() => {
+      toastTimer.current = null;
+      setToast(null);
+    }, TOAST_MS);
 
     if (logs.length + 1 === CENTENNIAL) {
       setCentennial(true);
-      window.setTimeout(() => setCentennial(false), 1800);
+      if (centennialTimer.current !== null) {
+        window.clearTimeout(centennialTimer.current);
+      }
+      centennialTimer.current = window.setTimeout(() => {
+        centennialTimer.current = null;
+        setCentennial(false);
+      }, CENTENNIAL_MS);
     }
   };
 

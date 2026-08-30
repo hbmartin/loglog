@@ -17,16 +17,31 @@ const TICK_MS = 60_000;
  * The visibility listener is what covers the case that actually happens:
  * timers are throttled or stopped outright while the app is backgrounded, so
  * coming back to it hours later must not wait out an interval first.
+ *
+ * `latest` is the newest timestamp the caller is about to measure windows
+ * against, and it exists because this clock steps rather than runs: between
+ * ticks it lags real time by up to a minute. Every helper in trend.ts drops
+ * logs dated after `now`, so a score tapped twenty seconds after the last
+ * tick is filtered straight back out of the chart, the week count, the mean
+ * and the streak - the history list shows it, and every other reading on the
+ * screen sits unchanged until the tick lands. The app's primary action
+ * appears not to register. Passing the newest entry pulls the clock forward
+ * to cover it.
+ *
+ * By one tick at most, though. That is the whole of this clock's own error,
+ * and past it the future-dated logs those guards exist for - a device whose
+ * clock ran ahead, a record imported from one that had - have to stay out of
+ * the window.
  */
-export function useNow(): number {
-  const [now, setNow] = useState(() => Date.now());
+export function useNow(latest?: string): number {
+  const [tick, setTick] = useState(() => Date.now());
 
   useEffect(() => {
-    const tick = () => setNow(Date.now());
-    const timer = window.setInterval(tick, TICK_MS);
+    const advance = () => setTick(Date.now());
+    const timer = window.setInterval(advance, TICK_MS);
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
-        tick();
+        advance();
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
@@ -37,5 +52,9 @@ export function useNow(): number {
     };
   }, []);
 
-  return now;
+  if (latest === undefined) {
+    return tick;
+  }
+  const at = Date.parse(latest);
+  return Number.isNaN(at) || at <= tick ? tick : Math.min(at, tick + TICK_MS);
 }

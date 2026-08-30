@@ -87,12 +87,35 @@ async function fingerprint(files: readonly string[], dir: string): Promise<strin
   return hash.digest("hex").slice(0, 12);
 }
 
-/** Root-relative URLs for the emitted files under `assets/`. */
+const FONT_FILE = /\.(?:woff2?|ttf|otf|eot)$/i;
+
+/**
+ * Root-relative URLs for the emitted files under `assets/` that the service
+ * worker should pre-cache on install.
+ *
+ * Faces are left out. @fontsource emits one file per script - Latin,
+ * Latin-ext, Cyrillic, Cyrillic-ext, Vietnamese, Hebrew - and a given reader
+ * renders one or two of the eight we ship, so pre-caching the set spends
+ * ~150 kB of a fresh download on every deploy on glyphs that will never be
+ * drawn. They are also the one asset class that degrades gracefully: a face
+ * missing offline falls through to the stack behind it, where a missing chunk
+ * is a blank screen. The worker's fetch handler still caches whichever subset
+ * the page actually loads, so the second offline visit has it.
+ */
 function assetUrls(files: readonly string[], dir: string): string[] {
-  return files
-    .map((file) => path.relative(dir, file).split(path.sep))
-    .filter((segments) => segments[0] === "assets")
-    .map((segments) => `/${segments.join("/")}`);
+  return (
+    files
+      .map((file) => path.relative(dir, file).split(path.sep))
+      .filter(
+        (segments) => segments[0] === "assets" && !FONT_FILE.test(segments[segments.length - 1]),
+      )
+      // Encoded per segment rather than joined raw: Vite keeps the source
+      // basename for many imported assets, and a space, "#", "?" or "%" in one
+      // resolves to a different path - or to a truncated one - by the time the
+      // worker hands it to fetch, so the entry never matches what the page asks
+      // for. Encoding also matches what the bundler writes into index.html.
+      .map((segments) => `/${segments.map(encodeURIComponent).join("/")}`)
+  );
 }
 
 /**
@@ -104,11 +127,28 @@ function assetUrls(files: readonly string[], dir: string): string[] {
  * CACHE_VERSION and BUILD_ASSETS there for what each is load-bearing for.
  */
 function serviceWorkerVersion(): Plugin {
-  const MARKERS = {
-    __CACHE_VERSION__:
-      "Without it the service worker cache name never changes, so stale asset caches are never pruned.",
-    __BUILD_ASSETS__:
-      "Without it the worker pre-caches nothing, and the first offline load after a deploy has a shell with no code behind it.",
+  // One entry per marker, holding both what replaces it and what breaks if
+  // the worker no longer carries it. A presence guard and a substitution map
+  // kept side by side drift: a marker added to only one either fails the
+  // build for no reason or, worse, passes the guard and is written into
+  // dist/sw.js verbatim.
+  const MARKERS: Record<
+    string,
+    {
+      consequence: string;
+      value: (files: readonly string[], dir: string) => string | Promise<string>;
+    }
+  > = {
+    __CACHE_VERSION__: {
+      consequence:
+        "Without it the service worker cache name never changes, so stale asset caches are never pruned.",
+      value: (files, dir) => fingerprint(files, dir),
+    },
+    __BUILD_ASSETS__: {
+      consequence:
+        "Without it the worker pre-caches nothing, and the first offline load after a deploy has a shell with no code behind it.",
+      value: (files, dir) => JSON.stringify(assetUrls(files, dir)),
+    },
   };
   let outDir = "dist";
 
@@ -121,7 +161,7 @@ function serviceWorkerVersion(): Plugin {
     async closeBundle() {
       const file = path.join(outDir, "sw.js");
       const source = await readFile(file, "utf8");
-      for (const [marker, consequence] of Object.entries(MARKERS)) {
+      for (const [marker, { consequence }] of Object.entries(MARKERS)) {
         if (!source.includes(marker)) {
           throw new Error(`${file} no longer contains ${marker}. ${consequence}`);
         }
@@ -134,15 +174,13 @@ function serviceWorkerVersion(): Plugin {
       // file byte-identical, so the browser sees no new worker to install and
       // the previous cache is never pruned.
       const files = await emittedFiles(outDir, file);
-      const substitutions: Record<string, string> = {
-        __CACHE_VERSION__: await fingerprint(files, outDir),
-        __BUILD_ASSETS__: JSON.stringify(assetUrls(files, outDir)),
-      };
+      const entries = Object.entries(MARKERS);
+      const values = await Promise.all(entries.map(([, { value }]) => value(files, outDir)));
 
-      const stamped = Object.entries(substitutions).reduce(
+      const stamped = entries.reduce(
         // A function, for the same reason the theme plugin above uses one: a
         // `$` sequence in a value must be inserted, not expanded.
-        (current, [marker, value]) => current.replaceAll(marker, () => value),
+        (current, [marker], index) => current.replaceAll(marker, () => values[index]),
         source,
       );
       await writeFile(file, stamped);

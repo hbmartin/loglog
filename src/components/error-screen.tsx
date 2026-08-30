@@ -17,9 +17,17 @@ export function ErrorScreen({ error }: Readonly<{ error: unknown }>) {
   const details = error instanceof Error ? error.message : typeof error === "string" ? error : "";
 
   // exportRawBackup answers null rather than throwing, denied storage
-  // included - this screen must never throw, and without a backup it still
-  // offers a reload.
-  const backup = exportRawBackup();
+  // included, and is caught anyway. This is the one call in this render body,
+  // and the invariant above is the component's whole reason to exist: a screen
+  // that throws while offering the user their only copy of their data is worse
+  // than no screen. One branch is a cheap price for not making that invariant
+  // depend on another module keeping a promise it has no test for.
+  let backup: string | null = null;
+  try {
+    backup = exportRawBackup();
+  } catch {
+    // Without a backup this screen still offers a reload.
+  }
 
   const saveBackup = () => {
     if (backup === null) {

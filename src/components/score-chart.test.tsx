@@ -94,6 +94,30 @@ describe("ScoreChart", () => {
     expect(caption(container)).toContain("Watery puddle");
   });
 
+  it("splits a cluster's slice rather than handing its middle a sliver", () => {
+    // Three logs across one afternoon, ten days into the window with clear
+    // air on either side. Their own midpoints gave the middle one a band the
+    // width of an hour - 0.4 user units, half a CSS pixel on a phone, a
+    // <rect> no finger can land on - while its neighbours kept a fortnight
+    // each. Keying the run on exact equality of x never caught it: an hour
+    // apart is not the same instant, it is just too close to tap.
+    const { container } = render(
+      draw([
+        log("last week", 20 * DAY, 2),
+        log("after lunch", 10 * DAY + 2 * HOUR, 3),
+        log("teatime", 10 * DAY + HOUR, 6),
+        log("evening", 10 * DAY, 7),
+      ]),
+    );
+    const widths = hitTargets(container).map((rect) => Number(rect.getAttribute("width")));
+    expect(widths).toHaveLength(4);
+    expect(Math.min(...widths)).toBeGreaterThan(10);
+
+    // Still one slice per log, still in plot order, each selecting its own.
+    fireEvent.click(hitTargets(container)[2]);
+    expect(caption(container)).toContain("Shapeless mush");
+  });
+
   it("marks off-ideal points by shape as well as colour", () => {
     // The score ramp runs amber - emerald - red, so colour alone leaves a
     // red/green-deficient reader, and any greyscale print, unable to tell

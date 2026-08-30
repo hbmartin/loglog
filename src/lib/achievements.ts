@@ -1,5 +1,5 @@
 import { scoreInfo } from "@/lib/purina";
-import { dayKey } from "@/lib/trend";
+import { DAWN_HOUR, dayKey } from "@/lib/trend";
 import { POOP_COLORS, type PoopLog } from "@/lib/types";
 
 /**
@@ -37,12 +37,17 @@ function isNextDay(day: string, next: string): boolean {
  * The longest run of consecutive days on which everything logged was ideal.
  * A day with no logs at all breaks the run rather than extending it - the
  * streak is for keeping a dog in the band, not for looking away.
+ *
+ * Days that have not happened yet are dropped, the same way loggedDays and
+ * chartSeries drop them: a device whose clock ran ahead, or a record edited
+ * by hand, should not be able to extend a streak into tomorrow.
  */
-export function longestIdealRun(logs: readonly PoopLog[]): number {
+export function longestIdealRun(logs: readonly PoopLog[], now = Date.now()): number {
   const spotless = new Map<string, boolean>();
   for (const log of logs) {
     const at = new Date(log.loggedAt);
-    if (Number.isNaN(at.getTime())) {
+    const time = at.getTime();
+    if (Number.isNaN(time) || time > now) {
       continue;
     }
     const key = dayKey(at);
@@ -78,13 +83,14 @@ function has(logs: readonly PoopLog[], predicate: (log: PoopLog) => boolean): nu
 export function achievements(
   logs: readonly PoopLog[],
   options: Readonly<{ exported: boolean }> = { exported: false },
+  now = Date.now(),
 ): Achievement[] {
-  const idealRun = longestIdealRun(logs);
+  const idealRun = longestIdealRun(logs, now);
   const namesakes = has(logs, (log) => log.score === 3);
   const codeBrowns = has(logs, (log) => log.score === 7);
   const dawns = has(logs, (log) => {
     const hour = new Date(log.loggedAt).getHours();
-    return !Number.isNaN(hour) && hour < 6;
+    return !Number.isNaN(hour) && hour < DAWN_HOUR;
   });
   const colors = new Set(logs.flatMap((log) => (log.color === null ? [] : [log.color])));
 
@@ -110,7 +116,7 @@ export function achievements(
     {
       id: "dawn-patrol",
       name: "Dawn Patrol",
-      blurb: "Logged something before 6am. Nobody made you do this.",
+      blurb: "Logged something before 7am. Nobody made you do this.",
       ...earned(dawns, 1),
     },
     {
