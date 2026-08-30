@@ -51,6 +51,11 @@ jobs:
 
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
+        env:
+          # This job installs Python only, so the oxlint/oxfmt hooks have no
+          # `pnpm` to shell out to. They exist for the local commit path; the
+          # build job below runs both against the same package.json scripts.
+          SKIP: oxlint,oxfmt
 
   build:
     name: Typecheck, test & build

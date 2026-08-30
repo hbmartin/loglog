@@ -12,6 +12,8 @@ repos:
       - id: check-illegal-windows-names
       - id: check-executables-have-shebangs
       - id: check-json
+        # .oxlintrc.json is JSONC: oxlint reads comments, check-json does not.
+        exclude: ^\.oxlintrc\.json$
       - id: check-merge-conflict
       - id: check-shebang-scripts-are-executable
       - id: check-symlinks
