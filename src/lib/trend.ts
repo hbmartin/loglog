@@ -1,8 +1,11 @@
-import { IDEAL_MAX, IDEAL_MIN } from "@/lib/purina";
+import { IDEAL_MAX, IDEAL_MIN, scoreInfo } from "@/lib/purina";
 import { FECAL_SCORES, type FecalScore, type PoopLog } from "@/lib/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
+
+/** Gridlines on the trend chart, including both ends of the window. */
+const TICK_COUNT = 5;
 
 export type Trend = {
   total: number;
@@ -24,7 +27,7 @@ export function summarise(logs: readonly PoopLog[], now = Date.now()): Trend {
     total: logs.length,
     lastWeek: recent.length,
     average,
-    offIdeal: recent.filter((log) => log.score < IDEAL_MIN || log.score > IDEAL_MAX).length,
+    offIdeal: recent.filter((log) => !scoreInfo(log.score).ideal).length,
   };
 }
 
@@ -41,6 +44,8 @@ function scoreToY(score: number): number {
 }
 
 export type ChartPoint = {
+  /** The log's id, so a point stays identifiable across re-renders. */
+  id: string;
   /** 0 at the window's oldest edge, 1 at now. */
   x: number;
   /** 0 at the top of the score scale, 1 at the bottom. */
@@ -74,29 +79,36 @@ export function chartSeries(logs: readonly PoopLog[], now = Date.now(), days = 3
       }
       return [
         {
+          id: log.id,
           x: (at - start) / span,
           y: scoreToY(log.score),
           score: log.score,
           loggedAt: log.loggedAt,
-          ideal: log.score >= IDEAL_MIN && log.score <= IDEAL_MAX,
+          // Same source as the history list's badges, so a dot and its row
+          // can never disagree about whether a score is ideal.
+          ideal: scoreInfo(log.score).ideal,
         },
       ];
     })
-    // Logs arrive newest-first; a polyline needs them in time order.
-    .toSorted((a, b) => a.x - b.x);
+    // flatMap already returned a fresh array; sorting it in place mutates
+    // nothing shared. Logs arrive newest-first, a polyline needs time order.
+    .sort((a, b) => a.x - b.x);
 
-  // Weekly gridlines anchored on today, so the rightmost tick is always "now".
-  const ticks = [];
-  for (let ago = 0; ago <= days; ago += 7) {
-    const at = now - ago * DAY_MS;
-    ticks.unshift({
-      x: (at - start) / span,
-      label: new Date(at).toLocaleDateString(undefined, {
+  // Gridlines evenly spanning the window with both ends pinned: the leftmost
+  // label is the window's oldest edge and the rightmost is "now". Stepping
+  // back weekly from today instead would stop 28 days into a 30-day window,
+  // leaving the oldest two days without a gridline and putting the first
+  // label two days to the right of where the plot actually starts.
+  const ticks = Array.from({ length: TICK_COUNT }, (_, index) => {
+    const fraction = index / (TICK_COUNT - 1);
+    return {
+      x: fraction,
+      label: new Date(start + fraction * span).toLocaleDateString(undefined, {
         month: "short",
         day: "numeric",
       }),
-    });
-  }
+    };
+  });
 
   return {
     points,

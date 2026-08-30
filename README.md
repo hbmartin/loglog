@@ -64,6 +64,7 @@ src/
     purina.ts       # the 1-7 scale, color swatches, flag labels
     csv.ts          # RFC 4180 export with formula-injection escaping
     trend.ts        # 7-day summary + relative timestamps
+    theme.ts        # theme keys, shared with the pre-paint script in index.html
   components/ui/    # shadcn/ui (Base UI primitives)
 public/
   sw.js             # offline shell + immutable asset cache

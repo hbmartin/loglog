@@ -22,7 +22,7 @@ function DogListPage() {
 
   // store is referentially stable between writes, so both of these recompute
   // only when the data actually changes.
-  const dogs = useMemo(() => store.dogs.toSorted((a, b) => a.name.localeCompare(b.name)), [store]);
+  const dogs = useMemo(() => [...store.dogs].sort((a, b) => a.name.localeCompare(b.name)), [store]);
   const byDog = useMemo(() => logsByDog(store), [store]);
 
   const submit = () => {

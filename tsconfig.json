@@ -3,7 +3,11 @@
     "target": "ES2022",
     "jsx": "react-jsx",
     "module": "ESNext",
-    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    // ES2022, not ES2023: the Vite build target floor is Safari 16.0 (see
+    // build.target in vite.config.ts) and ES2023 array methods such as
+    // toSorted need 16.4. Nothing polyfills them, so raising this without
+    // raising that floor ships a runtime crash that typecheck cannot see.
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "types": ["vite/client"],
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
@@ -18,7 +22,6 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true,
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }

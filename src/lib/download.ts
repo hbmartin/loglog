@@ -8,8 +8,13 @@ export function downloadFile(blob: Blob, filename: string): void {
   // exactly where this app is meant to live, so prefer the share sheet.
   const file = new File([blob], filename, { type: blob.type });
   if (navigator.canShare?.({ files: [file] }) === true) {
-    void navigator.share({ files: [file], title: filename }).catch(() => {
-      // Cancelled or unsupported at call time; fall through to the anchor.
+    void navigator.share({ files: [file], title: filename }).catch((error: unknown) => {
+      // Dismissing the share sheet rejects with AbortError. The user said no,
+      // so saying it another way by writing the file to disk is not a
+      // fallback. Anything else means the share never got off the ground.
+      if (error instanceof Error && error.name === "AbortError") {
+        return;
+      }
       anchorDownload(blob, filename);
     });
     return;

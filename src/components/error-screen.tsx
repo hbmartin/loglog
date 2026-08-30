@@ -11,7 +11,11 @@ import { exportRawBackup } from "@/lib/storage";
  * reason we are on this screen is a store that no longer parses, and CSV
  * export needs a valid parsed store.
  */
-export function ErrorScreen({ error }: Readonly<{ error: Error }>) {
+export function ErrorScreen({ error }: Readonly<{ error: unknown }>) {
+  // Typed `unknown`, not `Error`: a boundary receives whatever was thrown, and
+  // `throw null` here would take out the last screen offering the backup.
+  const details = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+
   let backup: string | null = null;
   try {
     backup = exportRawBackup();
@@ -59,11 +63,11 @@ export function ErrorScreen({ error }: Readonly<{ error: Error }>) {
         </Button>
       </div>
 
-      {error.message === "" ? null : (
+      {details === "" ? null : (
         <details className="w-full text-left">
           <summary className="text-muted-foreground cursor-pointer text-xs">Error details</summary>
           <pre className="text-muted-foreground mt-2 overflow-x-auto rounded-lg border p-3 text-xs">
-            {error.message}
+            {details}
           </pre>
         </details>
       )}

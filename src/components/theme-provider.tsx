@@ -1,21 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-
-type Theme = "dark" | "light" | "system";
-
-const THEMES = ["dark", "light", "system"] as const;
-
-/**
- * Keep in sync with the pre-paint script in index.html, which resolves the
- * theme before React mounts and so cannot import this constant.
- */
-export const THEME_STORAGE_KEY = "loglog:theme";
-
-/** Pre-1.0 key. Read once so an existing preference survives the rename. */
-const LEGACY_THEME_STORAGE_KEY = "vite-ui-theme";
-
-function isTheme(value: string | null): value is Theme {
-  return value !== null && (THEMES as readonly string[]).includes(value);
-}
+import { isTheme, LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY, type Theme } from "@/lib/theme";
 
 function readStoredTheme(): Theme | null {
   try {

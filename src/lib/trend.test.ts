@@ -79,7 +79,7 @@ describe("chartSeries", () => {
 
   it("orders points oldest first regardless of input order", () => {
     const xs = chartSeries([log(1, 3), log(20, 3), log(10, 3)], NOW).points.map((point) => point.x);
-    expect(xs).toEqual(xs.toSorted((a, b) => a - b));
+    expect(xs).toEqual([...xs].sort((a, b) => a - b));
   });
 
   it("places the window edges at x 0 and 1", () => {
@@ -106,11 +106,31 @@ describe("chartSeries", () => {
     expect(band.bottom).toBeGreaterThan(two.y);
   });
 
-  it("emits weekly ticks with the newest anchored on today", () => {
+  it("spans the whole window with ticks, both ends pinned", () => {
     const { ticks } = chartSeries([], NOW);
     expect(ticks).toHaveLength(5);
-    expect(ticks[ticks.length - 1].x).toBeCloseTo(1);
-    expect(ticks[0].x).toBeLessThan(ticks[1].x);
+    // Not just "close to the edges": the component draws the first label
+    // left-aligned and the last right-aligned on the assumption that they sit
+    // flush against the plot edges, and a log older than the leftmost tick
+    // would plot outside the labelled range.
+    expect(ticks[0].x).toBe(0);
+    expect(ticks[ticks.length - 1].x).toBe(1);
+    const xs = ticks.map((tick) => tick.x);
+    expect(xs).toEqual([...xs].sort((a, b) => a - b));
+  });
+
+  it("labels the oldest tick with the oldest day in the window", () => {
+    const { ticks } = chartSeries([], NOW);
+    const thirtyDaysAgo = new Date(NOW - 30 * DAY).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+    expect(ticks[0].label).toBe(thirtyDaysAgo);
+  });
+
+  it("carries each log's id so a point survives its neighbours being deleted", () => {
+    const series = chartSeries([log(3, 2), log(1, 4)], NOW);
+    expect(series.points.map((point) => point.id)).toEqual(["l3-2", "l1-4"]);
   });
 
   it("keeps a single log plottable", () => {

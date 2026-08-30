@@ -12,8 +12,9 @@ repos:
       - id: check-illegal-windows-names
       - id: check-executables-have-shebangs
       - id: check-json
-        # .oxlintrc.json is JSONC: oxlint reads comments, check-json does not.
-        exclude: ^\.oxlintrc\.json$
+        # Both of these are JSONC. oxlint and tsc read the comments in them;
+        # check-json does not.
+        exclude: ^(\.oxlintrc|tsconfig)\.json$
       - id: check-merge-conflict
       - id: check-shebang-scripts-are-executable
       - id: check-symlinks

@@ -12,7 +12,11 @@
     // `import "@/styles.css"` is a side-effect import and has nothing to bind.
     "import/no-unassigned-import": "off",
     // __resetCache is a deliberately ugly test seam, named to look like one.
-    "eslint/no-underscore-dangle": "off"
+    "eslint/no-underscore-dangle": "off",
+    // The suggested toSorted needs Safari 16.4 and the build target floor is
+    // 16.0 (see build.target in vite.config.ts). Every sort() here runs on an
+    // array that was just built, so there is nothing shared to mutate.
+    "unicorn/no-array-sort": "off"
   },
   "env": {
     "browser": true,
