@@ -1,3 +1,4 @@
+import { downloadFile, localDateStamp } from "@/lib/download";
 import { scoreInfo } from "@/lib/purina";
 import type { Dog, PoopLog, Store } from "@/lib/types";
 
@@ -33,7 +34,7 @@ export function buildCsv(store: Store, dogs: readonly Dog[] = store.dogs): strin
   const names = new Map(dogs.map((dog) => [dog.id, dog.name]));
   const logs: PoopLog[] = store.logs
     .filter((log) => names.has(log.dogId))
-    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt));
+    .toSorted((a, b) => a.loggedAt.localeCompare(b.loggedAt));
 
   const rows: string[][] = [
     [...COLUMNS],
@@ -53,40 +54,15 @@ export function buildCsv(store: Store, dogs: readonly Dog[] = store.dogs): strin
 }
 
 export function csvFilename(prefix = "loglog"): string {
-  const today = new Date().toISOString().slice(0, 10);
-  const slug = prefix.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-  return `${slug || "loglog"}-${today}.csv`;
+  const slug = prefix
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  return `${slug || "loglog"}-${localDateStamp()}.csv`;
 }
 
 export function downloadCsv(content: string, filename: string): void {
   // Leading BOM so Excel reads it as UTF-8 rather than the local codepage.
-  const type = "text/csv;charset=utf-8";
-  const blob = new Blob([`﻿${content}`], { type });
-
-  // Anchor downloads are unreliable inside an installed iOS PWA, which is
-  // exactly where this app is meant to live, so prefer the share sheet.
-  const file = new File([blob], filename, { type });
-  if (navigator.canShare?.({ files: [file] }) === true) {
-    void navigator.share({ files: [file], title: filename }).catch(() => {
-      // Cancelled or unsupported at call time; fall through to the anchor.
-      anchorDownload(blob, filename);
-    });
-    return;
-  }
-
-  anchorDownload(blob, filename);
-}
-
-function anchorDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.rel = "noopener";
-  // Firefox requires the anchor to be in the document to honour the click.
-  document.body.append(anchor);
-  anchor.click();
-  anchor.remove();
-  // Revoking synchronously cancels the download in some browsers.
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  const blob = new Blob([`﻿${content}`], { type: "text/csv;charset=utf-8" });
+  downloadFile(blob, filename);
 }

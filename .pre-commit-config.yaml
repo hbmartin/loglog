@@ -12,6 +12,8 @@ repos:
       - id: check-illegal-windows-names
       - id: check-executables-have-shebangs
       - id: check-json
+        # .oxlintrc.json is JSONC: oxlint reads comments, check-json does not.
+        exclude: ^\.oxlintrc\.json$
       - id: check-merge-conflict
       - id: check-shebang-scripts-are-executable
       - id: check-symlinks
@@ -28,28 +30,44 @@ repos:
       - id: forbid-new-submodules
       - id: mixed-line-ending
         args: ["--fix=lf"]
-      - id: pretty-format-json
-        args: ["--autofix", "--no-ensure-ascii", "--no-sort-keys"]
+      # pretty-format-json is deliberately absent: oxfmt owns .json formatting
+      # now, and the two rewrite each other on every commit.
       - id: trailing-whitespace
         args: ["--markdown-linebreak-ext=md"]
       # - id: no-commit-to-branch
       #   args: ["--branch", "main", "--branch", "master"]
+
+  # Run from the local install so CI, the editor and the hook all agree on the
+  # version pinned in package.json.
+  - repo: local
+    hooks:
+      - id: oxlint
+        name: oxlint
+        entry: pnpm exec oxlint
+        language: system
+        pass_filenames: false
+        files: \.(ts|tsx|js|jsx)$
+      - id: oxfmt
+        name: oxfmt
+        entry: pnpm exec oxfmt --check
+        language: system
+        pass_filenames: false
+        files: \.(ts|tsx|js|jsx|json|jsonc|css|md|ya?ml)$
 
   - repo: https://github.com/compilerla/conventional-pre-commit
     rev: v4.3.0
     hooks:
       - id: conventional-pre-commit
         stages: [commit-msg]
-        args: [
-          "--strict",
-          "--verbose",
-          "ci",
-          "chore",
-          "docs",
-          "feat",
-          "fix",
-          "perf",
-          "refactor",
-          "revert",
-          "test",
-        ]
+        args:
+          - "--strict"
+          - "--verbose"
+          - "ci"
+          - "chore"
+          - "docs"
+          - "feat"
+          - "fix"
+          - "perf"
+          - "refactor"
+          - "revert"
+          - "test"

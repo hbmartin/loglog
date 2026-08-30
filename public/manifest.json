@@ -3,12 +3,30 @@
   "name": "loglog",
   "short_name": "loglog",
   "description": "Track your dog's poop on the Purina fecal scoring scale. Local-only, works offline.",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["health", "lifestyle"],
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
   "theme_color": "#7b4b26",
-  "background_color": "#ffffff",
+  "background_color": "#7b4b26",
+  "screenshots": [
+    {
+      "src": "/screenshots/narrow.png",
+      "sizes": "780x1688",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "A dog's 30-day score trend and the 1-7 grader"
+    },
+    {
+      "src": "/screenshots/wide.png",
+      "sizes": "2560x1600",
+      "type": "image/png",
+      "form_factor": "wide",
+      "label": "A dog's 30-day score trend and the 1-7 grader"
+    }
+  ],
   "icons": [
     {
       "src": "/favicon.ico",
@@ -28,7 +46,7 @@
       "purpose": "any"
     },
     {
-      "src": "/logo512.png",
+      "src": "/logo512-maskable.png",
       "type": "image/png",
       "sizes": "512x512",
       "purpose": "maskable"

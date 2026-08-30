@@ -22,8 +22,7 @@ export const PURINA_SCALE: readonly ScoreInfo[] = [
   {
     score: 2,
     label: "Firm, segmented",
-    description:
-      "Firm but not hard, pliable, segmented. Little or no residue when picked up.",
+    description: "Firm but not hard, pliable, segmented. Little or no residue when picked up.",
     ideal: true,
   },
   {
@@ -50,8 +49,7 @@ export const PURINA_SCALE: readonly ScoreInfo[] = [
   {
     score: 6,
     label: "Shapeless mush",
-    description:
-      "Has texture but no defined shape; occurs as piles or spots. Leaves residue.",
+    description: "Has texture but no defined shape; occurs as piles or spots. Leaves residue.",
     ideal: false,
   },
   {
@@ -73,22 +71,20 @@ export function scoreInfo(score: FecalScore): ScoreInfo {
  * Literal colors, not theme tokens: these are the actual thing being judged,
  * so they must render identically in light and dark mode.
  */
-export const COLOR_INFO: Record<
-  PoopColor,
-  { label: string; swatch: string; concerning: boolean }
-> = {
-  brown: { label: "Brown", swatch: "#7b4b26", concerning: false },
-  dark: { label: "Dark brown", swatch: "#3e2413", concerning: false },
-  black: { label: "Black / tarry", swatch: "#17110d", concerning: true },
-  red: {
-    label: "Red streaks",
-    swatch: "linear-gradient(135deg,#7b4b26 0%,#7b4b26 40%,#a3231b 50%,#7b4b26 60%,#7b4b26 100%)",
-    concerning: true,
-  },
-  yellow: { label: "Yellow", swatch: "#c79a2e", concerning: true },
-  green: { label: "Green", swatch: "#4e7a38", concerning: true },
-  grey: { label: "Grey", swatch: "#9a9188", concerning: true },
-};
+export const COLOR_INFO: Record<PoopColor, { label: string; swatch: string; concerning: boolean }> =
+  {
+    brown: { label: "Brown", swatch: "#7b4b26", concerning: false },
+    dark: { label: "Dark brown", swatch: "#3e2413", concerning: false },
+    black: { label: "Black / tarry", swatch: "#17110d", concerning: true },
+    red: {
+      label: "Red streaks",
+      swatch: "linear-gradient(135deg,#7b4b26 0%,#7b4b26 40%,#a3231b 50%,#7b4b26 60%,#7b4b26 100%)",
+      concerning: true,
+    },
+    yellow: { label: "Yellow", swatch: "#c79a2e", concerning: true },
+    green: { label: "Green", swatch: "#4e7a38", concerning: true },
+    grey: { label: "Grey", swatch: "#9a9188", concerning: true },
+  };
 
 export const FLAG_LABELS = {
   blood: "Blood",

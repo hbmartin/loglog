@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ChevronRight, Download, Plus, X } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { buildCsv, csvFilename, downloadCsv } from "@/lib/csv";
 import { scoreInfo } from "@/lib/purina";
-import { addDog, logsForDog, useStore } from "@/lib/storage";
+import { addDog, logsByDog, useStore } from "@/lib/storage";
 import { timeAgo } from "@/lib/trend";
 
 export const Route = createFileRoute("/")({
@@ -20,7 +20,10 @@ function DogListPage() {
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
 
-  const dogs = [...store.dogs].sort((a, b) => a.name.localeCompare(b.name));
+  // store is referentially stable between writes, so both of these recompute
+  // only when the data actually changes.
+  const dogs = useMemo(() => store.dogs.toSorted((a, b) => a.name.localeCompare(b.name)), [store]);
+  const byDog = useMemo(() => logsByDog(store), [store]);
 
   const submit = () => {
     if (addDog(name) !== null) {
@@ -52,15 +55,10 @@ function DogListPage() {
 
       <ul className="mb-4 flex flex-col gap-2">
         {dogs.map((dog) => {
-          const logs = logsForDog(store, dog.id);
-          const latest = logs[0];
+          const latest = byDog.get(dog.id)?.[0];
           return (
             <li key={dog.id}>
-              <Link
-                to="/dog/$dogId"
-                params={{ dogId: dog.id }}
-                className="block rounded-xl"
-              >
+              <Link to="/dog/$dogId" params={{ dogId: dog.id }} className="block rounded-xl">
                 <Card className="hover:bg-muted/50 flex flex-row items-center gap-3 p-4 transition-colors">
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{dog.name}</p>
@@ -71,9 +69,7 @@ function DogListPage() {
                     </p>
                   </div>
                   {latest === undefined ? null : (
-                    <Badge
-                      variant={scoreInfo(latest.score).ideal ? "secondary" : "destructive"}
-                    >
+                    <Badge variant={scoreInfo(latest.score).ideal ? "secondary" : "destructive"}>
                       {latest.score}
                     </Badge>
                   )}
@@ -88,6 +84,9 @@ function DogListPage() {
       {adding ? (
         <Card className="mb-4 flex flex-row items-center gap-2 p-3">
           <Input
+            // The field only exists because the user just tapped "Add new
+            // dog", so focus belongs here; nothing is stolen on page load.
+            // oxlint-disable-next-line jsx-a11y/no-autofocus
             autoFocus
             value={name}
             placeholder="Name"
@@ -95,7 +94,10 @@ function DogListPage() {
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") submit();
-              if (event.key === "Escape") setAdding(false);
+              if (event.key === "Escape") {
+                setAdding(false);
+                setName("");
+              }
             }}
           />
           <Button onClick={submit} disabled={name.trim() === ""}>

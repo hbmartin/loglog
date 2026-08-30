@@ -1,0 +1,38 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "react", "unicorn", "import", "jsx-a11y", "oxc", "vitest"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn",
+    "perf": "warn"
+  },
+  "rules": {
+    // React 19's automatic JSX runtime; tsconfig sets "jsx": "react-jsx".
+    "react/react-in-jsx-scope": "off",
+    // `import "@/styles.css"` is a side-effect import and has nothing to bind.
+    "import/no-unassigned-import": "off",
+    // __resetCache is a deliberately ugly test seam, named to look like one.
+    "eslint/no-underscore-dangle": "off"
+  },
+  "env": {
+    "browser": true,
+    "es2024": true
+  },
+  "ignorePatterns": ["dist", "src/routeTree.gen.ts"],
+  "overrides": [
+    {
+      "files": ["public/sw.js"],
+      "globals": {
+        "self": "readonly",
+        "caches": "readonly",
+        "clients": "readonly"
+      }
+    },
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "typescript/no-non-null-assertion": "off"
+      }
+    }
+  ]
+}

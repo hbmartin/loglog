@@ -9,3 +9,7 @@
 # Vite emits content-hashed filenames here.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# Install-prompt artwork: fetched rarely, and stale is harmless.
+/screenshots/*
+  Cache-Control: public, max-age=604800

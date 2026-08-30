@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildCsv, csvFilename, escapeField, toCsv } from "@/lib/csv";
 import type { Store } from "@/lib/types";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("escapeField", () => {
   it("leaves plain values alone", () => {
@@ -22,15 +26,18 @@ describe("escapeField", () => {
   });
 
   it("defuses before quoting, so both apply", () => {
-    expect(escapeField('=HYPERLINK("a","b")')).toBe(
-      "\"'=HYPERLINK(\"\"a\"\",\"\"b\"\")\""
-    );
+    expect(escapeField('=HYPERLINK("a","b")')).toBe('"\'=HYPERLINK(""a"",""b"")"');
   });
 });
 
 describe("toCsv", () => {
   it("joins rows with CRLF per RFC 4180", () => {
-    expect(toCsv([["a", "b"], ["c", "d"]])).toBe("a,b\r\nc,d");
+    expect(
+      toCsv([
+        ["a", "b"],
+        ["c", "d"],
+      ]),
+    ).toBe("a,b\r\nc,d");
   });
 });
 
@@ -71,9 +78,7 @@ const store: Store = {
 describe("buildCsv", () => {
   it("emits a header and one oldest-first row per log", () => {
     const lines = buildCsv(store).split("\r\n");
-    expect(lines[0]).toBe(
-      "dog,logged_at,score,score_label,color,blood,mucus,worms"
-    );
+    expect(lines[0]).toBe("dog,logged_at,score,score_label,color,blood,mucus,worms");
     expect(lines).toHaveLength(4);
     expect(lines[1]).toContain("2026-01-02T10:00:00.000Z");
     expect(lines[3]).toContain("2026-03-02T10:00:00.000Z");
@@ -98,5 +103,14 @@ describe("csvFilename", () => {
 
   it("falls back when the prefix slugs to nothing", () => {
     expect(csvFilename("!!!")).toMatch(/^loglog-\d{4}-\d{2}-\d{2}\.csv$/);
+  });
+
+  it("uses the local calendar date instead of the UTC date", () => {
+    vi.spyOn(Date.prototype, "getFullYear").mockReturnValue(2026);
+    vi.spyOn(Date.prototype, "getMonth").mockReturnValue(0);
+    vi.spyOn(Date.prototype, "getDate").mockReturnValue(2);
+    vi.spyOn(Date.prototype, "toISOString").mockReturnValue("2026-01-03T01:00:00.000Z");
+
+    expect(csvFilename()).toBe("loglog-2026-01-02.csv");
   });
 });

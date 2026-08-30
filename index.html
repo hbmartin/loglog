@@ -2,16 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1, viewport-fit=cover"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>loglog</title>
     <meta
       name="description"
       content="Track your dog's poop on the Purina fecal scoring scale. Local-only, works offline."
     />
     <meta name="theme-color" content="#7b4b26" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="loglog" />
     <link rel="icon" href="/favicon.ico" sizes="any" />
@@ -19,16 +17,20 @@
     <link rel="manifest" href="/manifest.json" />
     <script>
       // Resolve the theme before first paint so dark mode never flashes white.
+      // Runs before React mounts, so it cannot import THEME_STORAGE_KEY from
+      // src/components/theme-provider.tsx — keep the keys in sync by hand.
       (function () {
-        const storageKey = "vite-ui-theme";
-        const theme = localStorage.getItem(storageKey);
-        const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-          .matches
-          ? "dark"
-          : "light";
-        const resolvedTheme =
-          theme === "system" || !theme ? systemTheme : theme;
-        document.documentElement.classList.add(resolvedTheme);
+        try {
+          const theme =
+            localStorage.getItem("loglog:theme") ?? localStorage.getItem("vite-ui-theme");
+          const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+          const resolvedTheme = theme === "dark" || theme === "light" ? theme : systemTheme;
+          document.documentElement.classList.add(resolvedTheme);
+        } catch (_) {
+          // Storage denied (Safari private mode). React resolves it on mount.
+        }
       })();
     </script>
   </head>

@@ -17,14 +17,10 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { buildCsv, csvFilename, downloadCsv } from "@/lib/csv";
-import {
-  COLOR_INFO,
-  FLAG_LABELS,
-  PURINA_SCALE,
-  scoreInfo,
-} from "@/lib/purina";
+import { COLOR_INFO, FLAG_LABELS, PURINA_SCALE, scoreInfo } from "@/lib/purina";
+import { ScoreChart } from "@/components/score-chart";
 import { addLog, deleteLog, findDog, logsForDog, useStore } from "@/lib/storage";
-import { summarise, timeAgo } from "@/lib/trend";
+import { chartSeries, summarise, timeAgo } from "@/lib/trend";
 import { cn } from "@/lib/utils";
 import {
   POOP_COLORS,
@@ -54,12 +50,11 @@ function DogPage() {
 
   const logs = logsForDog(store, dog.id);
   const trend = summarise(logs);
+  const series = chartSeries(logs);
 
   const toggleFlag = (flag: PoopFlag) => {
     setFlags((current) =>
-      current.includes(flag)
-        ? current.filter((f) => f !== flag)
-        : [...current, flag]
+      current.includes(flag) ? current.filter((f) => f !== flag) : [...current, flag],
     );
   };
 
@@ -93,15 +88,26 @@ function DogPage() {
 
       <TrendSummary trend={trend} lastLoggedAt={logs[0]?.loggedAt} />
 
+      {series.points.length === 0 ? null : (
+        <div className="mt-4">
+          <ScoreChart
+            series={series}
+            label={`${dog.name}: Purina fecal score over the last 30 days. ${
+              series.points.length
+            } ${series.points.length === 1 ? "log" : "logs"}, ${
+              series.points.filter((point) => !point.ideal).length
+            } outside the ideal 2–3 range. Every entry is listed under History below.`}
+          />
+        </div>
+      )}
+
       <Separator className="my-5" />
 
       <section aria-labelledby="grade-heading">
         <h2 id="grade-heading" className="mb-1 font-semibold">
           How was it?
         </h2>
-        <p className="text-muted-foreground mb-3 text-sm">
-          Purina fecal score. 2–3 is ideal.
-        </p>
+        <p className="text-muted-foreground mb-3 text-sm">Purina fecal score. 2–3 is ideal.</p>
 
         <div className="flex flex-col gap-2">
           {PURINA_SCALE.map((info) => {
@@ -116,7 +122,7 @@ function DogPage() {
                   "flex min-h-14 w-full items-center gap-3 rounded-xl border p-3 text-left transition-colors",
                   selected
                     ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-card hover:bg-muted"
+                    : "border-border bg-card hover:bg-muted",
                 )}
               >
                 <span
@@ -126,7 +132,7 @@ function DogPage() {
                       ? "bg-primary-foreground/15"
                       : info.ideal
                         ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                        : "bg-muted"
+                        : "bg-muted",
                   )}
                 >
                   {info.score}
@@ -140,7 +146,7 @@ function DogPage() {
                           "ml-1.5 text-xs font-normal",
                           selected
                             ? "text-primary-foreground/70"
-                            : "text-emerald-700 dark:text-emerald-400"
+                            : "text-emerald-700 dark:text-emerald-400",
                         )}
                       >
                         ideal
@@ -150,9 +156,7 @@ function DogPage() {
                   <span
                     className={cn(
                       "block text-xs",
-                      selected
-                        ? "text-primary-foreground/70"
-                        : "text-muted-foreground"
+                      selected ? "text-primary-foreground/70" : "text-muted-foreground",
                     )}
                   >
                     {info.description}
@@ -186,7 +190,7 @@ function DogPage() {
                       "size-11 rounded-full border-2 transition-all",
                       selected
                         ? "border-foreground scale-110"
-                        : "border-border hover:border-foreground/40"
+                        : "border-border hover:border-foreground/40",
                     )}
                     style={{ background: info.swatch }}
                   />
@@ -219,7 +223,7 @@ function DogPage() {
                       "min-h-11 rounded-full border px-4 text-sm font-medium transition-colors",
                       selected
                         ? "border-destructive bg-destructive/15 text-destructive"
-                        : "border-border bg-card hover:bg-muted"
+                        : "border-border bg-card hover:bg-muted",
                     )}
                   >
                     {FLAG_LABELS[flag]}
@@ -236,12 +240,9 @@ function DogPage() {
       )}
 
       {justSaved ? (
-        <p
-          role="status"
-          className="mt-3 text-center text-sm font-medium text-emerald-700 dark:text-emerald-400"
-        >
+        <output className="mt-3 block text-center text-sm font-medium text-emerald-700 dark:text-emerald-400">
           Logged.
-        </p>
+        </output>
       ) : null}
 
       <Separator className="my-6" />
@@ -255,9 +256,7 @@ function DogPage() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() =>
-                downloadCsv(buildCsv(store, [dog]), csvFilename(dog.name))
-              }
+              onClick={() => downloadCsv(buildCsv(store, [dog]), csvFilename(dog.name))}
             >
               <Download />
               CSV
@@ -272,18 +271,13 @@ function DogPage() {
             {logs.map((log) => (
               <li key={log.id}>
                 <Card className="flex flex-row items-center gap-3 p-3">
-                  <Badge
-                    variant={scoreInfo(log.score).ideal ? "secondary" : "destructive"}
-                  >
+                  <Badge variant={scoreInfo(log.score).ideal ? "secondary" : "destructive"}>
                     {log.score}
                   </Badge>
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {scoreInfo(log.score).label}
-                    </p>
+                    <p className="truncate text-sm font-medium">{scoreInfo(log.score).label}</p>
                     <p className="text-muted-foreground text-xs">
-                      {new Date(log.loggedAt).toLocaleString()} ·{" "}
-                      {timeAgo(log.loggedAt)}
+                      {new Date(log.loggedAt).toLocaleString()} · {timeAgo(log.loggedAt)}
                     </p>
                   </div>
                   {log.color === null ? null : (
@@ -318,19 +312,12 @@ function TrendSummary({
   lastLoggedAt: string | undefined;
 }>) {
   if (trend.total === 0) {
-    return (
-      <p className="text-muted-foreground mt-1 text-sm">
-        No logs yet — pick a score below.
-      </p>
-    );
+    return <p className="text-muted-foreground mt-1 text-sm">No logs yet — pick a score below.</p>;
   }
 
   return (
     <div className="mt-3 grid grid-cols-3 gap-2">
-      <Stat
-        label="Last"
-        value={lastLoggedAt === undefined ? "—" : timeAgo(lastLoggedAt)}
-      />
+      <Stat label="Last" value={lastLoggedAt === undefined ? "—" : timeAgo(lastLoggedAt)} />
       <Stat label="Past 7 days" value={String(trend.lastWeek)} />
       <Stat
         label="Avg score"
@@ -339,8 +326,7 @@ function TrendSummary({
       />
       {trend.offIdeal > 0 ? (
         <p className="text-muted-foreground col-span-3 text-xs">
-          {trend.offIdeal} of {trend.lastWeek} in the past week fell outside the
-          ideal 2–3 band.
+          {trend.offIdeal} of {trend.lastWeek} in the past week fell outside the ideal 2–3 band.
         </p>
       ) : null}
     </div>
@@ -355,12 +341,7 @@ function Stat({
   return (
     <Card className="gap-0 p-3">
       <p className="text-muted-foreground text-xs">{label}</p>
-      <p
-        className={cn(
-          "truncate text-base font-semibold",
-          warn ? "text-destructive" : undefined
-        )}
-      >
+      <p className={cn("truncate text-base font-semibold", warn ? "text-destructive" : undefined)}>
         {value}
       </p>
     </Card>

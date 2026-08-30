@@ -51,6 +51,11 @@ jobs:
 
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
+        env:
+          # This job installs Python only, so the oxlint/oxfmt hooks have no
+          # `pnpm` to shell out to. They exist for the local commit path; the
+          # build job below runs both against the same package.json scripts.
+          SKIP: oxlint,oxfmt
 
   build:
     name: Typecheck, test & build
@@ -61,13 +66,15 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: "22"
           cache: pnpm
@@ -77,6 +84,12 @@ jobs:
 
       - name: Typecheck
         run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm run fmt:check
 
       - name: Test
         run: pnpm test

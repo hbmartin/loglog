@@ -17,7 +17,7 @@ const STORAGE_KEY = "loglog:v1";
 const dogSchema = z.object({
   id: z.string(),
   name: z.string(),
-  createdAt: z.string(),
+  createdAt: z.iso.datetime(),
 });
 
 const logSchema = z.object({
@@ -34,7 +34,7 @@ const logSchema = z.object({
   ]),
   color: z.enum(POOP_COLORS).nullable(),
   flags: z.array(z.enum(POOP_FLAGS)),
-  loggedAt: z.string(),
+  loggedAt: z.iso.datetime(),
 });
 
 const storeSchema = z.object({
@@ -90,6 +90,15 @@ function write(next: Store): void {
   }
 }
 
+function mutate(update: (current: Store) => Store): void {
+  // Rebase every mutation on the latest persisted snapshot. This prevents a
+  // tab with a stale in-memory cache from restoring records another tab added
+  // or deleted before its storage event was delivered.
+  const current =
+    typeof window === "undefined" ? read() : parseStore(window.localStorage.getItem(STORAGE_KEY));
+  write(update(current));
+}
+
 function subscribe(listener: () => void): () => void {
   listeners.add(listener);
 
@@ -130,8 +139,7 @@ export function addDog(name: string): Dog | null {
     name: trimmed,
     createdAt: new Date().toISOString(),
   };
-  const current = read();
-  write({ ...current, dogs: [...current.dogs, dog] });
+  mutate((current) => ({ ...current, dogs: [...current.dogs, dog] }));
   return dog;
 }
 
@@ -149,21 +157,61 @@ export function addLog(input: {
     flags: input.flags,
     loggedAt: new Date().toISOString(),
   };
-  const current = read();
-  write({ ...current, logs: [...current.logs, log] });
+  mutate((current) => ({ ...current, logs: [...current.logs, log] }));
   return log;
 }
 
 export function deleteLog(id: string): void {
-  const current = read();
-  write({ ...current, logs: current.logs.filter((log) => log.id !== id) });
+  mutate((current) => ({
+    ...current,
+    logs: current.logs.filter((log) => log.id !== id),
+  }));
 }
 
 /** Newest first. */
 export function logsForDog(store: Store, dogId: string): PoopLog[] {
   return store.logs
     .filter((log) => log.dogId === dogId)
-    .sort((a, b) => b.loggedAt.localeCompare(a.loggedAt));
+    .toSorted((a, b) => b.loggedAt.localeCompare(a.loggedAt));
+}
+
+/**
+ * Every dog's logs, newest first, indexed in a single pass. Calling
+ * logsForDog once per dog rescans the whole log list each time; on a list
+ * screen that is O(dogs x logs) of filtering and sorting per render.
+ *
+ * Only dogs with at least one log appear as keys.
+ */
+export function logsByDog(store: Store): Map<string, PoopLog[]> {
+  const grouped = new Map<string, PoopLog[]>();
+  for (const log of store.logs) {
+    const existing = grouped.get(log.dogId);
+    if (existing === undefined) {
+      grouped.set(log.dogId, [log]);
+    } else {
+      existing.push(log);
+    }
+  }
+  for (const logs of grouped.values()) {
+    // Sorting in place is safe and allocation-free: these arrays were just
+    // built here and are not shared with the caller's store.
+    // oxlint-disable-next-line unicorn/no-array-sort
+    logs.sort((a, b) => b.loggedAt.localeCompare(a.loggedAt));
+  }
+  return grouped;
+}
+
+/**
+ * The raw persisted string, for the error screen's backup download. Bypasses
+ * the schema entirely: it exists precisely for the case where the store no
+ * longer parses, which is when a backup matters most.
+ */
+export function exportRawBackup(): string | null {
+  try {
+    return window.localStorage.getItem(STORAGE_KEY);
+  } catch {
+    return null;
+  }
 }
 
 export function findDog(store: Store, dogId: string): Dog | undefined {

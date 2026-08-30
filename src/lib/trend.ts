@@ -1,7 +1,8 @@
 import { IDEAL_MAX, IDEAL_MIN } from "@/lib/purina";
-import type { PoopLog } from "@/lib/types";
+import { FECAL_SCORES, type FecalScore, type PoopLog } from "@/lib/types";
 
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
 
 export type Trend = {
   total: number;
@@ -12,21 +13,97 @@ export type Trend = {
 };
 
 export function summarise(logs: readonly PoopLog[], now = Date.now()): Trend {
-  const recent = logs.filter(
-    (log) => now - new Date(log.loggedAt).getTime() <= WEEK_MS
-  );
+  const recent = logs.filter((log) => {
+    const elapsed = now - new Date(log.loggedAt).getTime();
+    return elapsed >= 0 && elapsed <= WEEK_MS;
+  });
   const average =
-    recent.length === 0
-      ? null
-      : recent.reduce((sum, log) => sum + log.score, 0) / recent.length;
+    recent.length === 0 ? null : recent.reduce((sum, log) => sum + log.score, 0) / recent.length;
 
   return {
     total: logs.length,
     lastWeek: recent.length,
     average,
-    offIdeal: recent.filter(
-      (log) => log.score < IDEAL_MIN || log.score > IDEAL_MAX
-    ).length,
+    offIdeal: recent.filter((log) => log.score < IDEAL_MIN || log.score > IDEAL_MAX).length,
+  };
+}
+
+const SCORE_MIN = FECAL_SCORES[0];
+const SCORE_MAX = FECAL_SCORES[FECAL_SCORES.length - 1];
+
+/**
+ * Score to a 0-1 fraction measured from the top of the plot, so it drops
+ * straight into SVG coordinates. The scale runs 7 at the top down to 1 at the
+ * bottom, matching how the axis is drawn.
+ */
+function scoreToY(score: number): number {
+  return (SCORE_MAX - score) / (SCORE_MAX - SCORE_MIN);
+}
+
+export type ChartPoint = {
+  /** 0 at the window's oldest edge, 1 at now. */
+  x: number;
+  /** 0 at the top of the score scale, 1 at the bottom. */
+  y: number;
+  score: FecalScore;
+  loggedAt: string;
+  ideal: boolean;
+};
+
+export type ChartSeries = {
+  points: ChartPoint[];
+  ticks: { x: number; label: string }[];
+  /** The ideal 2-3 band, in the same y units as the points. */
+  band: { top: number; bottom: number };
+};
+
+/**
+ * Score-over-time geometry for the last `days`, normalised to 0-1 on both
+ * axes so the component owns every pixel decision. Pure, so it is testable
+ * without a DOM.
+ */
+export function chartSeries(logs: readonly PoopLog[], now = Date.now(), days = 30): ChartSeries {
+  const span = days * DAY_MS;
+  const start = now - span;
+
+  const points = logs
+    .flatMap((log) => {
+      const at = new Date(log.loggedAt).getTime();
+      if (Number.isNaN(at) || at < start || at > now) {
+        return [];
+      }
+      return [
+        {
+          x: (at - start) / span,
+          y: scoreToY(log.score),
+          score: log.score,
+          loggedAt: log.loggedAt,
+          ideal: log.score >= IDEAL_MIN && log.score <= IDEAL_MAX,
+        },
+      ];
+    })
+    // Logs arrive newest-first; a polyline needs them in time order.
+    .toSorted((a, b) => a.x - b.x);
+
+  // Weekly gridlines anchored on today, so the rightmost tick is always "now".
+  const ticks = [];
+  for (let ago = 0; ago <= days; ago += 7) {
+    const at = now - ago * DAY_MS;
+    ticks.unshift({
+      x: (at - start) / span,
+      label: new Date(at).toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+      }),
+    });
+  }
+
+  return {
+    points,
+    ticks,
+    // Half a step of padding, so a score of 2 or 3 sits inside the band
+    // instead of balanced on its edge.
+    band: { top: scoreToY(IDEAL_MAX + 0.5), bottom: scoreToY(IDEAL_MIN - 0.5) },
   };
 }
 
