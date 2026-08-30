@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { ChevronLeft, Download, Trash2 } from "lucide-react";
+import { ChevronLeft, Download, Printer, Trash2 } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,15 +12,21 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { buildCsv, csvFilename, downloadCsv } from "@/lib/csv";
-import { COLOR_INFO, FLAG_LABELS, PURINA_SCALE, scoreInfo } from "@/lib/purina";
+import { AchievementShelf } from "@/components/achievement-shelf";
+import { Centennial } from "@/components/centennial";
+import { PlopButton } from "@/components/plop-button";
+import { ScoreBadge } from "@/components/score-badge";
 import { ScoreChart } from "@/components/score-chart";
+import { ScoreGlyph } from "@/components/score-glyph";
+import { achievements } from "@/lib/achievements";
+import { buildCsv, csvFilename, downloadCsv } from "@/lib/csv";
+import { markExported, useLexicon, useMeta } from "@/lib/meta";
+import { COLOR_INFO, FLAG_LABELS, PURINA_SCALE, scoreInfo } from "@/lib/purina";
 import { addLog, deleteLog, findDog, logsForDog, useStore } from "@/lib/storage";
-import { chartSeries, summarise, timeAgo } from "@/lib/trend";
+import { chartSeries, regularity, summarise, timeAgo, timeOfDayNote } from "@/lib/trend";
 import { cn } from "@/lib/utils";
 import {
   POOP_COLORS,
@@ -34,24 +40,35 @@ export const Route = createFileRoute("/dog/$dogId")({
   component: DogPage,
 });
 
+/** The one entry that earns a flourish. */
+const CENTENNIAL = 100;
+
 function DogPage() {
   const { dogId } = Route.useParams();
   const store = useStore();
+  const meta = useMeta();
+  const copy = useLexicon();
   const dog = findDog(store, dogId);
 
   const [score, setScore] = useState<FecalScore | null>(null);
   const [color, setColor] = useState<PoopColor | null>(null);
   const [flags, setFlags] = useState<PoopFlag[]>([]);
-  const [justSaved, setJustSaved] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+  const [centennial, setCentennial] = useState(false);
 
   // store is referentially stable between writes, so these recompute only
   // when the data actually changes. Without them a score tap, a colour tap or
-  // either end of the "Logged." toggle re-runs the filter, the sort, the
+  // either end of the confirmation toggle re-runs the filter, the sort, the
   // summary reduce and the whole chart geometry pass - and a fresh `series`
   // object re-reconciles every dot, gridline and label in the SVG.
   const logs = useMemo(() => (dog === undefined ? [] : logsForDog(store, dog.id)), [store, dog]);
   const trend = useMemo(() => summarise(logs), [logs]);
   const series = useMemo(() => chartSeries(logs), [logs]);
+  const streak = useMemo(() => regularity(logs), [logs]);
+  const earned = useMemo(
+    () => achievements(logs, { exported: meta.exportedAt !== null }),
+    [logs, meta.exportedAt],
+  );
   const offIdeal = useMemo(() => series.points.filter((point) => !point.ideal).length, [series]);
 
   if (dog === undefined) {
@@ -68,33 +85,63 @@ function DogPage() {
     if (score === null) {
       return;
     }
-    addLog({ dogId: dog.id, score, color, flags });
+    const saved = addLog({ dogId: dog.id, score, color, flags });
     setScore(null);
     setColor(null);
     setFlags([]);
-    setJustSaved(true);
-    window.setTimeout(() => setJustSaved(false), 2000);
+
+    // The aside is about the clock, never the score: there is no hour of the
+    // night at which a joke about a 7 is welcome.
+    const note = timeOfDayNote(saved.loggedAt);
+    const line = copy.toasts[Math.floor(Math.random() * copy.toasts.length)];
+    setToast(note === null ? line : `${line} ${note}`);
+    window.setTimeout(() => setToast(null), 2600);
+
+    if (logs.length + 1 === CENTENNIAL) {
+      setCentennial(true);
+      window.setTimeout(() => setCentennial(false), 1800);
+    }
+  };
+
+  const exportOne = () => {
+    downloadCsv(buildCsv(store, [dog]), csvFilename(dog.name));
+    markExported();
   };
 
   return (
     <main className="mx-auto w-full max-w-md px-4 pt-4 pb-12">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="-ml-2 mb-2"
-        render={
-          <Link to="/">
-            <ChevronLeft />
-            All dogs
-          </Link>
-        }
-      />
+      <Centennial show={centennial} />
 
-      <h1 className="text-2xl font-bold tracking-tight">{dog.name}</h1>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2"
+          render={
+            <Link to="/">
+              <ChevronLeft />
+              {copy.allSubjects}
+            </Link>
+          }
+        />
+        {logs.length === 0 ? null : (
+          <Button
+            variant="ghost"
+            size="sm"
+            render={
+              <Link to="/report/$dogId" params={{ dogId: dog.id }}>
+                <Printer />
+                {copy.reportLink}
+              </Link>
+            }
+          />
+        )}
+      </div>
 
-      <TrendSummary trend={trend} lastLoggedAt={logs[0]?.loggedAt} />
+      <h1 className="font-display text-2xl font-semibold tracking-tight">{dog.name}</h1>
 
-      {/* ScoreChart renders nothing without points, so no guard here. */}
+      <TrendSummary trend={trend} lastLoggedAt={logs[0]?.loggedAt} streak={streak} />
+
       <ScoreChart
         className="mt-4"
         series={series}
@@ -107,9 +154,9 @@ function DogPage() {
 
       <section aria-labelledby="grade-heading">
         <h2 id="grade-heading" className="mb-1 font-semibold">
-          How was it?
+          {copy.gradeHeading}
         </h2>
-        <p className="text-muted-foreground mb-3 text-sm">Purina fecal score. 2–3 is ideal.</p>
+        <p className="text-muted-foreground mb-3 text-sm">{copy.gradeHelp}</p>
 
         <div className="flex flex-col gap-2">
           {PURINA_SCALE.map((info) => {
@@ -129,18 +176,17 @@ function DogPage() {
               >
                 <span
                   className={cn(
-                    "flex size-9 shrink-0 items-center justify-center rounded-lg text-lg font-bold tabular-nums",
-                    selected
-                      ? "bg-primary-foreground/15"
-                      : info.ideal
-                        ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400"
-                        : "bg-muted",
+                    "flex size-10 shrink-0 items-center justify-center rounded-lg p-1.5",
+                    selected ? "bg-primary-foreground/15" : info.badge,
                   )}
                 >
-                  {info.score}
+                  <ScoreGlyph score={info.score} />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-medium">
+                    <span className="font-display mr-1.5 font-semibold tabular-nums">
+                      {info.score}
+                    </span>
                     {info.label}
                     {info.ideal ? (
                       <span
@@ -154,6 +200,14 @@ function DogPage() {
                         ideal
                       </span>
                     ) : null}
+                  </span>
+                  <span
+                    className={cn(
+                      "block text-xs italic",
+                      selected ? "text-primary-foreground/80" : "text-foreground/70",
+                    )}
+                  >
+                    {info.nickname}
                   </span>
                   <span
                     className={cn(
@@ -174,7 +228,8 @@ function DogPage() {
         <>
           <section aria-labelledby="color-heading" className="mt-6">
             <h2 id="color-heading" className="mb-2 font-semibold">
-              Color <span className="text-muted-foreground text-sm font-normal">(optional)</span>
+              {copy.colorHeading}{" "}
+              <span className="text-muted-foreground text-sm font-normal">{copy.optional}</span>
             </h2>
             <div className="flex flex-wrap gap-2">
               {POOP_COLORS.map((key) => {
@@ -189,7 +244,7 @@ function DogPage() {
                     title={info.label}
                     onClick={() => setColor(selected ? null : key)}
                     className={cn(
-                      "size-11 rounded-full border-2 transition-all",
+                      "swatch size-11 rounded-full border-2 transition-all",
                       selected
                         ? "border-foreground scale-110"
                         : "border-border hover:border-foreground/40",
@@ -209,8 +264,8 @@ function DogPage() {
 
           <section aria-labelledby="flags-heading" className="mt-6">
             <h2 id="flags-heading" className="mb-2 font-semibold">
-              Anything in it?{" "}
-              <span className="text-muted-foreground text-sm font-normal">(optional)</span>
+              {copy.flagsHeading}{" "}
+              <span className="text-muted-foreground text-sm font-normal">{copy.optional}</span>
             </h2>
             <div className="flex flex-wrap gap-2">
               {POOP_FLAGS.map((flag) => {
@@ -235,47 +290,49 @@ function DogPage() {
             </div>
           </section>
 
-          <Button className="mt-6 w-full" size="lg" onClick={save}>
-            Log it
-          </Button>
+          <PlopButton className="mt-6" onPlop={save}>
+            {copy.logIt}
+          </PlopButton>
         </>
       )}
 
-      {justSaved ? (
+      {toast === null ? null : (
         <output className="mt-3 block text-center text-sm font-medium text-emerald-700 dark:text-emerald-400">
-          Logged.
+          {toast}
         </output>
-      ) : null}
+      )}
+
+      <Separator className="my-6" />
+
+      <AchievementShelf
+        items={earned}
+        heading={copy.achievementsHeading}
+        help={copy.achievementsHelp}
+      />
 
       <Separator className="my-6" />
 
       <section aria-labelledby="history-heading">
         <div className="mb-3 flex items-center justify-between">
           <h2 id="history-heading" className="font-semibold">
-            History
+            {copy.historyHeading}
           </h2>
           {logs.length === 0 ? null : (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => downloadCsv(buildCsv(store, [dog]), csvFilename(dog.name))}
-            >
+            <Button variant="ghost" size="sm" onClick={exportOne}>
               <Download />
-              CSV
+              {copy.exportOne}
             </Button>
           )}
         </div>
 
         {logs.length === 0 ? (
-          <p className="text-muted-foreground text-sm">Nothing logged yet.</p>
+          <p className="text-muted-foreground text-sm">{copy.historyEmpty}</p>
         ) : (
           <ul className="flex flex-col gap-2">
             {logs.map((log) => (
               <li key={log.id}>
                 <Card className="flex flex-row items-center gap-3 p-3">
-                  <Badge variant={scoreInfo(log.score).ideal ? "secondary" : "destructive"}>
-                    {log.score}
-                  </Badge>
+                  <ScoreBadge score={log.score} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{scoreInfo(log.score).label}</p>
                     <p className="text-muted-foreground text-xs">
@@ -286,7 +343,7 @@ function DogPage() {
                     <span
                       aria-label={COLOR_INFO[log.color].label}
                       title={COLOR_INFO[log.color].label}
-                      className="border-border size-5 shrink-0 rounded-full border"
+                      className="swatch border-border size-5 shrink-0 rounded-full border"
                       style={{ background: COLOR_INFO[log.color].swatch }}
                     />
                   )}
@@ -309,25 +366,37 @@ function DogPage() {
 function TrendSummary({
   trend,
   lastLoggedAt,
+  streak,
 }: Readonly<{
   trend: ReturnType<typeof summarise>;
   lastLoggedAt: string | undefined;
+  streak: number;
 }>) {
+  const copy = useLexicon();
+
   if (trend.total === 0) {
     return <p className="text-muted-foreground mt-1 text-sm">No logs yet — pick a score below.</p>;
   }
 
   return (
-    <div className="mt-3 grid grid-cols-3 gap-2">
-      <Stat label="Last" value={lastLoggedAt === undefined ? "—" : timeAgo(lastLoggedAt)} />
-      <Stat label="Past 7 days" value={String(trend.lastWeek)} />
+    <div className="mt-3 grid grid-cols-2 gap-2">
       <Stat
-        label="Avg score"
+        label={copy.statLast}
+        value={lastLoggedAt === undefined ? "—" : timeAgo(lastLoggedAt)}
+      />
+      <Stat label={copy.statWeek} value={String(trend.lastWeek)} />
+      <Stat
+        label={copy.statMean}
+        hint={copy.statMeanHint}
         value={trend.average === null ? "—" : trend.average.toFixed(1)}
         warn={trend.offIdeal > 0}
       />
+      <Stat
+        label={copy.regularity}
+        value={`${streak} ${streak === 1 ? copy.regularityUnitOne : copy.regularityUnit}`}
+      />
       {trend.offIdeal > 0 ? (
-        <p className="text-muted-foreground col-span-3 text-xs">
+        <p className="text-muted-foreground col-span-2 text-xs">
           {trend.offIdeal} of {trend.lastWeek} in the past week fell outside the ideal 2–3 band.
         </p>
       ) : null}
@@ -338,12 +407,18 @@ function TrendSummary({
 function Stat({
   label,
   value,
+  hint,
   warn = false,
-}: Readonly<{ label: string; value: string; warn?: boolean }>) {
+}: Readonly<{ label: string; value: string; hint?: string; warn?: boolean }>) {
   return (
-    <Card className="gap-0 p-3">
+    <Card className="gap-0 p-3" title={hint}>
       <p className="text-muted-foreground text-xs">{label}</p>
-      <p className={cn("truncate text-base font-semibold", warn ? "text-destructive" : undefined)}>
+      <p
+        className={cn(
+          "font-display truncate text-base font-semibold",
+          warn ? "text-destructive" : undefined,
+        )}
+      >
         {value}
       </p>
     </Card>

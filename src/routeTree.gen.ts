@@ -10,11 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WrappedRouteImport } from './routes/wrapped'
 import { Route as DogDogIdRouteImport } from './routes/dog.$dogId'
+import { Route as ReportDogIdRouteImport } from './routes/report.$dogId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WrappedRoute = WrappedRouteImport.update({
+  id: '/wrapped',
+  path: '/wrapped',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DogDogIdRoute = DogDogIdRouteImport.update({
@@ -22,31 +29,44 @@ const DogDogIdRoute = DogDogIdRouteImport.update({
   path: '/dog/$dogId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportDogIdRoute = ReportDogIdRouteImport.update({
+  id: '/report/$dogId',
+  path: '/report/$dogId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/wrapped': typeof WrappedRoute
   '/dog/$dogId': typeof DogDogIdRoute
+  '/report/$dogId': typeof ReportDogIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/wrapped': typeof WrappedRoute
   '/dog/$dogId': typeof DogDogIdRoute
+  '/report/$dogId': typeof ReportDogIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/wrapped': typeof WrappedRoute
   '/dog/$dogId': typeof DogDogIdRoute
+  '/report/$dogId': typeof ReportDogIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dog/$dogId'
+  fullPaths: '/' | '/wrapped' | '/dog/$dogId' | '/report/$dogId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dog/$dogId'
-  id: '__root__' | '/' | '/dog/$dogId'
+  to: '/' | '/wrapped' | '/dog/$dogId' | '/report/$dogId'
+  id: '__root__' | '/' | '/wrapped' | '/dog/$dogId' | '/report/$dogId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  WrappedRoute: typeof WrappedRoute
   DogDogIdRoute: typeof DogDogIdRoute
+  ReportDogIdRoute: typeof ReportDogIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -58,6 +78,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/wrapped': {
+      id: '/wrapped'
+      path: '/wrapped'
+      fullPath: '/wrapped'
+      preLoaderRoute: typeof WrappedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dog/$dogId': {
       id: '/dog/$dogId'
       path: '/dog/$dogId'
@@ -65,12 +92,21 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DogDogIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/report/$dogId': {
+      id: '/report/$dogId'
+      path: '/report/$dogId'
+      fullPath: '/report/$dogId'
+      preLoaderRoute: typeof ReportDogIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  WrappedRoute: WrappedRoute,
   DogDogIdRoute: DogDogIdRoute,
+  ReportDogIdRoute: ReportDogIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

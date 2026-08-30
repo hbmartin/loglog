@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { useLexicon } from "@/lib/meta";
 import { scoreInfo } from "@/lib/purina";
 import type { ChartPoint, ChartSeries } from "@/lib/trend";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,7 @@ export function ScoreChart({
   className,
 }: Readonly<{ series: ChartSeries; label: string; className?: string }>) {
   const { points, ticks, band } = series;
+  const copy = useLexicon();
   const titleId = useId();
   // Keyed by log id rather than index: deleting a log shifts every later
   // index, which would silently retarget a held selection at its neighbour
@@ -58,7 +60,17 @@ export function ScoreChart({
   const [activeId, setActiveId] = useState<string | null>(null);
 
   if (points.length === 0) {
-    return null;
+    return (
+      <div
+        className={cn(
+          "border-border text-muted-foreground flex h-24 items-end justify-center",
+          "rounded-xl border border-dashed pb-3 text-sm",
+          className,
+        )}
+      >
+        {copy.chartEmpty}
+      </div>
+    );
   }
 
   const activePoint = points.find((point) => point.id === activeId) ?? null;
@@ -86,6 +98,17 @@ export function ScoreChart({
           height={toY(band.bottom) - toY(band.top)}
           className="fill-muted"
         />
+
+        {/* Names the reference area in place. Drawn before the marks, so a
+            dot sitting on top of it always wins. */}
+        <text
+          x={WIDTH - PAD_RIGHT - 3}
+          y={(toY(band.top) + toY(band.bottom)) / 2 + 3}
+          textAnchor="end"
+          className="fill-muted-foreground text-[8px] tracking-wide uppercase opacity-70"
+        >
+          {copy.idealBand}
+        </text>
 
         {/* Only the ends of the scale are labelled; the band anchors the rest. */}
         {[
@@ -135,7 +158,7 @@ export function ScoreChart({
               cx={toX(point.x)}
               cy={toY(point.y)}
               r={point.id === activeId ? 5 : 4}
-              className={point.ideal ? "fill-primary" : "fill-destructive"}
+              className={scoreInfo(point.score).dot}
             />
           </g>
         ))}
@@ -170,9 +193,7 @@ export function ScoreChart({
 
       <figcaption className="text-muted-foreground mt-1 min-h-8 text-xs" aria-live="polite">
         {activePoint === null ? (
-          <span>
-            Last 30 days, 7 (loosest) down to 1. The shaded band is the ideal 2&ndash;3 range.
-          </span>
+          <span>{copy.chartLegend}</span>
         ) : (
           <span className="text-foreground font-medium">
             {new Date(activePoint.loggedAt).toLocaleDateString(undefined, {

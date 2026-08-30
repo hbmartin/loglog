@@ -36,9 +36,10 @@ function caption(container: HTMLElement): string {
 }
 
 describe("ScoreChart", () => {
-  it("renders nothing when there is nothing in the window", () => {
+  it("draws an empty state, not a chart, when there is nothing in the window", () => {
     const { container } = render(draw([log("old", 45 * DAY, 3)]));
     expect(container.querySelector("svg")).toBeNull();
+    expect(container.textContent).toContain("No data. Go outside.");
   });
 
   it("gives every point its own hit target, even two logs on the same day", () => {

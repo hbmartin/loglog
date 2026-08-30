@@ -2,64 +2,77 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/nunito-sans";
+@import "@fontsource-variable/fredoka";
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Paper and mud.
+ *
+ * The theme-color in index.html and the manifest has always been #7b4b26 and
+ * the interface never once used it. Light mode is warm paper; dark mode is a
+ * night walk - a brown-black ground with a tan primary, because a cool grey
+ * primary on this subject matter was the one joke nobody was making on
+ * purpose. Hues sit around 55-85 so the literal color swatches in the grader,
+ * which are fixed hex and cannot move, look at home on either ground.
+ */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
+  --background: oklch(0.985 0.008 85);
+  --foreground: oklch(0.22 0.02 60);
+  --card: oklch(1 0.004 85);
+  --card-foreground: oklch(0.22 0.02 60);
+  --popover: oklch(1 0.004 85);
+  --popover-foreground: oklch(0.22 0.02 60);
+  --primary: oklch(0.44 0.085 55);
+  --primary-foreground: oklch(0.985 0.012 85);
+  --secondary: oklch(0.94 0.016 80);
+  --secondary-foreground: oklch(0.3 0.03 60);
+  --muted: oklch(0.945 0.014 80);
+  --muted-foreground: oklch(0.52 0.025 62);
+  --accent: oklch(0.93 0.022 75);
+  --accent-foreground: oklch(0.3 0.03 60);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  --border: oklch(0.89 0.016 78);
+  --input: oklch(0.89 0.016 78);
+  --ring: oklch(0.55 0.07 55);
+  --chart-1: oklch(0.55 0.1 55);
+  --chart-2: oklch(0.65 0.13 75);
+  --chart-3: oklch(0.6 0.12 145);
+  --chart-4: oklch(0.7 0.15 85);
+  --chart-5: oklch(0.6 0.19 30);
   --radius: 0.625rem;
 }
 
 .dark {
-  --background: oklch(0.141 0.005 285.823);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.21 0.006 285.885);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.21 0.006 285.885);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.92 0.004 286.32);
-  --primary-foreground: oklch(0.21 0.006 285.885);
-  --secondary: oklch(0.274 0.006 286.033);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.274 0.006 286.033);
-  --muted-foreground: oklch(0.705 0.015 286.067);
-  --accent: oklch(0.274 0.006 286.033);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.17 0.012 55);
+  --foreground: oklch(0.96 0.008 85);
+  --card: oklch(0.225 0.014 55);
+  --card-foreground: oklch(0.96 0.008 85);
+  --popover: oklch(0.225 0.014 55);
+  --popover-foreground: oklch(0.96 0.008 85);
+  --primary: oklch(0.78 0.075 65);
+  --primary-foreground: oklch(0.22 0.02 55);
+  --secondary: oklch(0.285 0.015 55);
+  --secondary-foreground: oklch(0.96 0.008 85);
+  --muted: oklch(0.285 0.015 55);
+  --muted-foreground: oklch(0.72 0.022 70);
+  --accent: oklch(0.3 0.018 60);
+  --accent-foreground: oklch(0.96 0.008 85);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.552 0.016 285.938);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
+  --border: oklch(0.9 0.02 80 / 12%);
+  --input: oklch(0.9 0.02 80 / 16%);
+  --ring: oklch(0.6 0.05 60);
+  --chart-1: oklch(0.75 0.09 65);
+  --chart-2: oklch(0.72 0.13 80);
+  --chart-3: oklch(0.7 0.12 150);
+  --chart-4: oklch(0.78 0.14 90);
+  --chart-5: oklch(0.68 0.17 28);
 }
 
 @theme inline {
   --font-sans: "Nunito Sans Variable", sans-serif;
+  /* Numerals, stat values and score badges only. Body copy stays Nunito. */
+  --font-display: "Fredoka Variable", "Nunito Sans Variable", sans-serif;
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -101,5 +114,129 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+@layer components {
+  /*
+   * Color swatches are the one place showing the actual thing being judged, so
+   * they get lit from the upper left in purina.ts and grained here. Without the
+   * grain they read as paint chips, which is a different and much less useful
+   * question than the one being asked.
+   */
+  .swatch {
+    position: relative;
+    isolation: isolate;
+  }
+  .swatch::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+    opacity: 0.22;
+    mix-blend-mode: overlay;
+    pointer-events: none;
+  }
+}
+
+/*
+ * The save gesture: the button takes the weight, a ring leaves from under it,
+ * and on the hundredth entry something arcs off the top of the screen. All of
+ * it decorative, all of it dropped under reduced motion below - the "Logged."
+ * line and the history row are what actually confirm the save.
+ */
+@keyframes loglog-plop {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(0.955);
+  }
+  70% {
+    transform: scale(1.015);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes loglog-ripple {
+  from {
+    transform: scale(0.7);
+    opacity: 0.35;
+  }
+  to {
+    transform: scale(2.3);
+    opacity: 0;
+  }
+}
+
+@keyframes loglog-arc {
+  0% {
+    transform: translate(-50%, 0) scale(0.6) rotate(0deg);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  50% {
+    transform: translate(-50%, -42vh) scale(1.25) rotate(180deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, 6vh) scale(0.9) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.animate-plop {
+  animation: loglog-plop 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.animate-ripple {
+  animation: loglog-ripple 520ms ease-out forwards;
+}
+
+.animate-arc {
+  animation: loglog-arc 1600ms cubic-bezier(0.33, 0, 0.4, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-plop,
+  .animate-ripple,
+  .animate-arc {
+    animation: none;
+  }
+  .animate-ripple,
+  .animate-arc {
+    display: none;
+  }
+}
+
+/*
+ * The printable summary is the one screen a vet holds. Everything interactive
+ * comes off the page, the theme is forced back to ink on paper whatever the
+ * app is set to, and a log row is never split across a page break.
+ */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+  .print-plain {
+    border-color: #bbb !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+  .print-break-avoid {
+    break-inside: avoid;
+  }
+  @page {
+    margin: 14mm;
   }
 }

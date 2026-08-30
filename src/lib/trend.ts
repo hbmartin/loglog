@@ -1,5 +1,5 @@
 import { IDEAL_MAX, IDEAL_MIN, scoreInfo } from "@/lib/purina";
-import { FECAL_SCORES, type FecalScore, type PoopLog } from "@/lib/types";
+import { FECAL_SCORES, type Dog, type FecalScore, type PoopLog } from "@/lib/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
@@ -132,4 +132,135 @@ export function timeAgo(iso: string, now = Date.now()): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
   return new Date(iso).toLocaleDateString();
+}
+
+/**
+ * Local calendar day, `YYYY-MM-DD`. Streaks and the yearly summary are both
+ * counted the way the user experienced them - a 1am log belongs to the night
+ * it happened, not to UTC's idea of the date.
+ */
+export function dayKey(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+/** The local days that have at least one usable, non-future log. */
+export function loggedDays(logs: readonly PoopLog[], now = Date.now()): Set<string> {
+  const days = new Set<string>();
+  for (const log of logs) {
+    const at = new Date(log.loggedAt);
+    const time = at.getTime();
+    if (!Number.isNaN(time) && time <= now) {
+      days.add(dayKey(at));
+    }
+  }
+  return days;
+}
+
+/**
+ * Consecutive days ending today with at least one log - the pun is the point.
+ *
+ * A run is allowed to end yesterday as well as today: the dog has not
+ * necessarily been out yet this morning, and a streak that evaporates at
+ * midnight would only ever punish people for logging early.
+ */
+export function regularity(logs: readonly PoopLog[], now = Date.now()): number {
+  const days = loggedDays(logs, now);
+  if (days.size === 0) {
+    return 0;
+  }
+
+  const cursor = new Date(now);
+  if (!days.has(dayKey(cursor))) {
+    cursor.setDate(cursor.getDate() - 1);
+    if (!days.has(dayKey(cursor))) {
+      return 0;
+    }
+  }
+
+  let count = 0;
+  while (days.has(dayKey(cursor))) {
+    count += 1;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+  return count;
+}
+
+/**
+ * An aside for the save confirmation, or null for the overwhelming majority
+ * of logs that happen at an unremarkable hour. Never about the score - only
+ * about the clock - so it can never make light of a bad result.
+ */
+export function timeOfDayNote(iso: string): string | null {
+  const hour = new Date(iso).getHours();
+  if (Number.isNaN(hour)) {
+    return null;
+  }
+  if (hour < 5) return "Rough night.";
+  if (hour < 7) return "Dawn patrol.";
+  if (hour >= 23) return "Late one.";
+  return null;
+}
+
+/** Midpoint of the ideal band; distance from it is what standings rank on. */
+const IDEAL_MID = (IDEAL_MIN + IDEAL_MAX) / 2;
+
+export type Standing = {
+  dog: Dog;
+  logs: number;
+  average: number;
+  /** Mean absolute distance from the middle of the ideal band. Lower is better. */
+  deviation: number;
+};
+
+/**
+ * A leaderboard for multi-dog households, over the past week.
+ *
+ * Ranked on mean distance from the middle of the ideal band rather than on
+ * mean score, because a 1 and a 4 are equally wrong in opposite directions and
+ * a plain average would quietly reward a dog for alternating between them.
+ * Dogs with nothing logged this week are left out rather than ranked last -
+ * not logging is not a result.
+ */
+export function standings(
+  dogs: readonly Dog[],
+  byDog: ReadonlyMap<string, readonly PoopLog[]>,
+  now = Date.now(),
+): Standing[] {
+  return dogs
+    .flatMap((dog) => {
+      const recent = (byDog.get(dog.id) ?? []).filter((log) => {
+        const elapsed = now - new Date(log.loggedAt).getTime();
+        return elapsed >= 0 && elapsed <= WEEK_MS;
+      });
+      if (recent.length === 0) {
+        return [];
+      }
+      const total = recent.reduce((sum, log) => sum + log.score, 0);
+      const spread = recent.reduce((sum, log) => sum + Math.abs(log.score - IDEAL_MID), 0);
+      return [
+        {
+          dog,
+          logs: recent.length,
+          average: total / recent.length,
+          deviation: spread / recent.length,
+        },
+      ];
+    })
+    .sort((a, b) => a.deviation - b.deviation || a.dog.name.localeCompare(b.dog.name));
+}
+
+/**
+ * Logs from the last `days`, newest first, dropping anything unparseable or
+ * dated in the future. `now` is a parameter rather than a call inside a
+ * component so the report screen can memoise this without doing impure work
+ * during render.
+ */
+export function withinDays(logs: readonly PoopLog[], days: number, now = Date.now()): PoopLog[] {
+  const cutoff = now - days * DAY_MS;
+  return logs.filter((log) => {
+    const at = new Date(log.loggedAt).getTime();
+    return !Number.isNaN(at) && at >= cutoff && at <= now;
+  });
 }

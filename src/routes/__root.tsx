@@ -2,6 +2,7 @@ import { Outlet, createRootRoute, Link } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
+import { useLexicon } from "@/lib/meta";
 
 export const Route = createRootRoute({
   component: RootComponent,
@@ -18,11 +19,13 @@ function RootComponent() {
 }
 
 function NotFoundComponent() {
+  const copy = useLexicon();
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 p-6 text-center">
-      <h1 className="text-4xl font-bold">Not found</h1>
-      <p className="text-muted-foreground">That page — or that dog — isn't here.</p>
-      <Button render={<Link to="/">Back to the pack</Link>} />
+      <h1 className="font-display text-4xl font-semibold">{copy.notFoundTitle}</h1>
+      <p className="text-muted-foreground">{copy.notFoundBody}</p>
+      <Button render={<Link to="/">{copy.backHome}</Link>} />
     </div>
   );
 }
