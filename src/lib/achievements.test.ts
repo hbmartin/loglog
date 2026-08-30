@@ -66,6 +66,13 @@ describe("longestIdealRun", () => {
     const broken: PoopLog = { ...log("bad", 0, 2), loggedAt: "not-a-date" };
     expect(longestIdealRun([broken, log("a", 1, 2)])).toBe(1);
   });
+
+  it("does not let a future-dated log extend the run", () => {
+    // A clock that ran ahead, or a hand-edited record: tomorrow is ideal in
+    // the sense that it has not happened.
+    const logs = [log("a", 1, 2), log("b", 0, 2), log("tomorrow", -1, 2)];
+    expect(longestIdealRun(logs, LOCAL_NOON.getTime())).toBe(2);
+  });
 });
 
 describe("achievements", () => {
@@ -79,9 +86,12 @@ describe("achievements", () => {
     expect(find(items, "code-brown").earned).toBe(true);
   });
 
-  it("earns Dawn Patrol only before 6am", () => {
+  // The boundary is DAWN_HOUR, shared with timeOfDayNote: any hour that gets
+  // the "Dawn patrol." aside on the save confirmation also earns the badge.
+  it("earns Dawn Patrol only before 7am", () => {
     expect(find(achievements([log("a", 0, 2, { hour: 7 })]), "dawn-patrol").earned).toBe(false);
-    expect(find(achievements([log("b", 0, 2, { hour: 5 })]), "dawn-patrol").earned).toBe(true);
+    expect(find(achievements([log("b", 0, 2, { hour: 6 })]), "dawn-patrol").earned).toBe(true);
+    expect(find(achievements([log("c", 0, 2, { hour: 5 })]), "dawn-patrol").earned).toBe(true);
   });
 
   it("tracks Full Spectrum across distinct colors only", () => {

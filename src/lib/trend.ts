@@ -188,6 +188,13 @@ export function regularity(logs: readonly PoopLog[], now = Date.now()): number {
 }
 
 /**
+ * The hour a dawn walk stops being one. Exported because the Dawn Patrol
+ * milestone is scored on the same boundary: the app must not congratulate
+ * somebody on an early start and then refuse to credit it.
+ */
+export const DAWN_HOUR = 7;
+
+/**
  * An aside for the save confirmation, or null for the overwhelming majority
  * of logs that happen at an unremarkable hour. Never about the score - only
  * about the clock - so it can never make light of a bad result.
@@ -198,7 +205,7 @@ export function timeOfDayNote(iso: string): string | null {
     return null;
   }
   if (hour < 5) return "Rough night.";
-  if (hour < 7) return "Dawn patrol.";
+  if (hour < DAWN_HOUR) return "Dawn patrol.";
   if (hour >= 23) return "Late one.";
   return null;
 }

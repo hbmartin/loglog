@@ -214,6 +214,8 @@ describe("timeOfDayNote", () => {
   });
 
   it("says nothing about an ordinary hour", () => {
+    // 7 is the boundary the Dawn Patrol milestone is scored on too.
+    expect(timeOfDayNote(atHour(7))).toBeNull();
     expect(timeOfDayNote(atHour(9))).toBeNull();
     expect(timeOfDayNote(atHour(14))).toBeNull();
   });

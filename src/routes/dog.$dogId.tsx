@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ChevronLeft, Download, Printer, Trash2 } from "lucide-react";
 import {
@@ -44,6 +44,10 @@ export const Route = createFileRoute("/dog/$dogId")({
 /** The one entry that earns a flourish. */
 const CENTENNIAL = 100;
 
+/** How long the save confirmation and the centennial flourish stay up. */
+const TOAST_MS = 2600;
+const CENTENNIAL_MS = 1800;
+
 function DogPage() {
   const { dogId } = Route.useParams();
   const store = useStore();
@@ -56,6 +60,25 @@ function DogPage() {
   const [flags, setFlags] = useState<PoopFlag[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [centennial, setCentennial] = useState(false);
+
+  // Both flourishes are on a timer, and saves arrive faster than those
+  // timers expire. Without a handle to cancel, the countdown from the
+  // previous save clears the toast a fraction of a second after the new one
+  // appeared; keeping the handles also stops a navigation mid-countdown
+  // firing into an unmounted page.
+  const toastTimer = useRef<number | null>(null);
+  const centennialTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (toastTimer.current !== null) {
+        window.clearTimeout(toastTimer.current);
+      }
+      if (centennialTimer.current !== null) {
+        window.clearTimeout(centennialTimer.current);
+      }
+    },
+    [],
+  );
 
   // Every window below is measured from `now` rather than from each helper's
   // own Date.now() default. Memoised on the logs alone, that default is
@@ -74,22 +97,25 @@ function DogPage() {
   const series = useMemo(() => chartSeries(logs, now), [logs, now]);
   const streak = useMemo(() => regularity(logs, now), [logs, now]);
   const earned = useMemo(
-    () => achievements(logs, { exported: meta.exportedAt !== null }),
-    [logs, meta.exportedAt],
+    () => achievements(logs, { exported: meta.exportedAt !== null }, now),
+    [logs, meta.exportedAt, now],
   );
   const offIdeal = useMemo(() => series.points.filter((point) => !point.ideal).length, [series]);
 
   // Hooks run before the notFound throw below, so this has to tolerate a dog
-  // that does not exist; the empty label is never rendered.
+  // that does not exist; the empty label is never rendered. The description
+  // points at the history section by whatever the current register calls it,
+  // so a screen-reader user is sent to a heading that is actually on the page.
   const dogName = dog?.name;
+  const historyHeading = copy.historyHeading;
   const label = useMemo(
     () =>
       dogName === undefined
         ? ""
         : `${dogName}: Purina fecal score over the last 30 days. ${series.points.length} ${
             series.points.length === 1 ? "log" : "logs"
-          }, ${offIdeal} outside the ideal 2–3 range. Every entry is listed under History below.`,
-    [dogName, series, offIdeal],
+          }, ${offIdeal} outside the ideal 2–3 range. Every entry is listed under ${historyHeading}, below.`,
+    [dogName, series, offIdeal, historyHeading],
   );
 
   if (dog === undefined) {
@@ -116,11 +142,23 @@ function DogPage() {
     const note = timeOfDayNote(saved.loggedAt);
     const line = copy.toasts[Math.floor(Math.random() * copy.toasts.length)];
     setToast(note === null ? line : `${line} ${note}`);
-    window.setTimeout(() => setToast(null), 2600);
+    if (toastTimer.current !== null) {
+      window.clearTimeout(toastTimer.current);
+    }
+    toastTimer.current = window.setTimeout(() => {
+      toastTimer.current = null;
+      setToast(null);
+    }, TOAST_MS);
 
     if (logs.length + 1 === CENTENNIAL) {
       setCentennial(true);
-      window.setTimeout(() => setCentennial(false), 1800);
+      if (centennialTimer.current !== null) {
+        window.clearTimeout(centennialTimer.current);
+      }
+      centennialTimer.current = window.setTimeout(() => {
+        centennialTimer.current = null;
+        setCentennial(false);
+      }, CENTENNIAL_MS);
     }
   };
 
