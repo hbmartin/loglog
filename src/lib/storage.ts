@@ -178,9 +178,14 @@ export function logsForDog(store: Store, dogId: string): PoopLog[] {
 }
 
 /**
- * Every dog's logs, newest first, indexed in a single pass. Calling
- * logsForDog once per dog rescans the whole log list each time; on a list
- * screen that is O(dogs x logs) of filtering and sorting per render.
+ * Every dog's logs, indexed in a single pass. Calling logsForDog once per dog
+ * rescans the whole log list each time; on a list screen that is O(dogs x
+ * logs) of filtering and sorting per render.
+ *
+ * Grouped in store order rather than sorted. What the list screen wants from
+ * each dog is one entry - the newest - and newestLog below finds it in a
+ * single scan; sorting a thousand-log history to read element [0] is work
+ * nothing asked for. A caller that needs the whole ordering has logsForDog.
  *
  * Only dogs with at least one log appear as keys.
  */
@@ -194,13 +199,23 @@ export function logsByDog(store: Store): Map<string, PoopLog[]> {
       existing.push(log);
     }
   }
-  for (const logs of grouped.values()) {
-    // Sorting in place is safe and allocation-free: these arrays were just
-    // built here and are not shared with the caller's store.
-    // oxlint-disable-next-line unicorn/no-array-sort
-    logs.sort((a, b) => b.loggedAt.localeCompare(a.loggedAt));
-  }
   return grouped;
+}
+
+/**
+ * The most recent entry, or undefined for a dog with nothing logged.
+ *
+ * Ties keep the earlier one in store order, which is what logsForDog's stable
+ * sort does too - the two must not disagree about which log is "latest".
+ */
+export function newestLog(logs: readonly PoopLog[] | undefined): PoopLog | undefined {
+  let newest: PoopLog | undefined;
+  for (const log of logs ?? []) {
+    if (newest === undefined || log.loggedAt.localeCompare(newest.loggedAt) > 0) {
+      newest = log;
+    }
+  }
+  return newest;
 }
 
 /**

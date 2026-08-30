@@ -80,13 +80,14 @@ src/
     purina.ts       # the 1-7 scale, nicknames, color swatches, flag labels
     csv.ts          # RFC 4180 export with formula-injection escaping
     trend.ts        # summaries, streaks, standings, relative timestamps
+    clock.ts        # the ticking `now` those rolling windows are measured from
     achievements.ts # milestones derived from the record
     wrapped.ts      # the year-in-review computation
     theme.ts        # theme keys, shared with the pre-paint script in index.html
   components/       # score glyphs, chart, achievement shelf, save button
   components/ui/    # shadcn/ui (Base UI primitives)
 public/
-  sw.js             # offline shell + immutable asset cache
+  sw.js             # offline shell + pre-cached, content-hashed assets
   manifest.json     # PWA manifest
   _headers          # Cloudflare cache-control
 ```

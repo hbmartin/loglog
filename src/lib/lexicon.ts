@@ -64,6 +64,8 @@ export type Lexicon = {
   chartEmpty: string;
   chartLegend: string;
   idealBand: string;
+  /** Said of a selected point, so shape and colour are not the only cues. */
+  outsideBand: string;
   subjectSingular: string;
   subjectPlural: string;
 };
@@ -125,6 +127,7 @@ const FIELD: Lexicon = {
   chartEmpty: "No data. Go outside.",
   chartLegend: "Last 30 days, 7 (loosest) down to 1. The shaded band is the ideal 2–3 range.",
   idealBand: "ideal",
+  outsideBand: "outside the ideal band",
   subjectSingular: "dog",
   subjectPlural: "dogs",
 };
@@ -179,6 +182,7 @@ const LAB: Lexicon = {
   chartLegend:
     "Preceding 30 days, score 7 (least formed) to 1. Shaded region marks the 2–3 reference range.",
   idealBand: "ref.",
+  outsideBand: "outside reference range",
   subjectSingular: "subject",
   subjectPlural: "subjects",
 };

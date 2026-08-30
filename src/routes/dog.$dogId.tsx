@@ -22,6 +22,7 @@ import { ScoreBadge } from "@/components/score-badge";
 import { ScoreChart } from "@/components/score-chart";
 import { ScoreGlyph } from "@/components/score-glyph";
 import { achievements } from "@/lib/achievements";
+import { useNow } from "@/lib/clock";
 import { buildCsv, csvFilename, downloadCsv } from "@/lib/csv";
 import { markExported, useLexicon, useMeta } from "@/lib/meta";
 import { COLOR_INFO, FLAG_LABELS, PURINA_SCALE, scoreInfo } from "@/lib/purina";
@@ -56,20 +57,40 @@ function DogPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [centennial, setCentennial] = useState(false);
 
-  // store is referentially stable between writes, so these recompute only
-  // when the data actually changes. Without them a score tap, a colour tap or
-  // either end of the confirmation toggle re-runs the filter, the sort, the
-  // summary reduce and the whole chart geometry pass - and a fresh `series`
-  // object re-reconciles every dot, gridline and label in the SVG.
+  // Every window below is measured from `now` rather than from each helper's
+  // own Date.now() default. Memoised on the logs alone, that default is
+  // captured at whatever moment the log list last changed and then frozen: an
+  // app left open overnight would still be counting an eight-day-old entry as
+  // "past 7 days", and only adding or deleting a log would move it.
+  const now = useNow();
+
+  // store is referentially stable between writes and `now` steps once a
+  // minute, so these recompute when the data actually changes rather than on
+  // every score tap, colour tap or toggle of the confirmation. ScoreChart is
+  // memoised on `series` and `label`, so a fresh object for either would
+  // re-reconcile every dot, gridline and label in the SVG.
   const logs = useMemo(() => (dog === undefined ? [] : logsForDog(store, dog.id)), [store, dog]);
-  const trend = useMemo(() => summarise(logs), [logs]);
-  const series = useMemo(() => chartSeries(logs), [logs]);
-  const streak = useMemo(() => regularity(logs), [logs]);
+  const trend = useMemo(() => summarise(logs, now), [logs, now]);
+  const series = useMemo(() => chartSeries(logs, now), [logs, now]);
+  const streak = useMemo(() => regularity(logs, now), [logs, now]);
   const earned = useMemo(
     () => achievements(logs, { exported: meta.exportedAt !== null }),
     [logs, meta.exportedAt],
   );
   const offIdeal = useMemo(() => series.points.filter((point) => !point.ideal).length, [series]);
+
+  // Hooks run before the notFound throw below, so this has to tolerate a dog
+  // that does not exist; the empty label is never rendered.
+  const dogName = dog?.name;
+  const label = useMemo(
+    () =>
+      dogName === undefined
+        ? ""
+        : `${dogName}: Purina fecal score over the last 30 days. ${series.points.length} ${
+            series.points.length === 1 ? "log" : "logs"
+          }, ${offIdeal} outside the ideal 2–3 range. Every entry is listed under History below.`,
+    [dogName, series, offIdeal],
+  );
 
   if (dog === undefined) {
     throw notFound();
@@ -140,15 +161,9 @@ function DogPage() {
 
       <h1 className="font-display text-2xl font-semibold tracking-tight">{dog.name}</h1>
 
-      <TrendSummary trend={trend} lastLoggedAt={logs[0]?.loggedAt} streak={streak} />
+      <TrendSummary trend={trend} lastLoggedAt={logs[0]?.loggedAt} streak={streak} now={now} />
 
-      <ScoreChart
-        className="mt-4"
-        series={series}
-        label={`${dog.name}: Purina fecal score over the last 30 days. ${series.points.length} ${
-          series.points.length === 1 ? "log" : "logs"
-        }, ${offIdeal} outside the ideal 2–3 range. Every entry is listed under History below.`}
-      />
+      <ScoreChart className="mt-4" series={series} label={label} />
 
       <Separator className="my-5" />
 
@@ -336,7 +351,7 @@ function DogPage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{scoreInfo(log.score).label}</p>
                     <p className="text-muted-foreground text-xs">
-                      {new Date(log.loggedAt).toLocaleString()} · {timeAgo(log.loggedAt)}
+                      {new Date(log.loggedAt).toLocaleString()} · {timeAgo(log.loggedAt, now)}
                     </p>
                   </div>
                   {log.color === null ? null : (
@@ -367,10 +382,12 @@ function TrendSummary({
   trend,
   lastLoggedAt,
   streak,
+  now,
 }: Readonly<{
   trend: ReturnType<typeof summarise>;
   lastLoggedAt: string | undefined;
   streak: number;
+  now: number;
 }>) {
   const copy = useLexicon();
 
@@ -382,7 +399,7 @@ function TrendSummary({
     <div className="mt-3 grid grid-cols-2 gap-2">
       <Stat
         label={copy.statLast}
-        value={lastLoggedAt === undefined ? "—" : timeAgo(lastLoggedAt)}
+        value={lastLoggedAt === undefined ? "—" : timeAgo(lastLoggedAt, now)}
       />
       <Stat label={copy.statWeek} value={String(trend.lastWeek)} />
       <Stat

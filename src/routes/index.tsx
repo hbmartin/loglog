@@ -7,10 +7,11 @@ import { ScoreBadge } from "@/components/score-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useNow } from "@/lib/clock";
 import { buildCsv, csvFilename, downloadCsv } from "@/lib/csv";
 import { useLexicon, markExported } from "@/lib/meta";
 import { scoreInfo } from "@/lib/purina";
-import { addDog, logsByDog, useStore } from "@/lib/storage";
+import { addDog, logsByDog, newestLog, useStore } from "@/lib/storage";
 import { standings, timeAgo, type Standing } from "@/lib/trend";
 
 export const Route = createFileRoute("/")({
@@ -24,11 +25,17 @@ function DogListPage() {
   const [name, setName] = useState("");
   const [placeholder, setPlaceholder] = useState(copy.namePlaceholders[0]);
 
-  // store is referentially stable between writes, so all of these recompute
-  // only when the data actually changes.
+  // The standings are a rolling week, so they are measured from `now` rather
+  // than from the Date.now() default inside standings: memoised on the data
+  // alone, that default freezes at whatever moment the store last changed and
+  // the week stops rolling. See useNow.
+  const now = useNow();
+
+  // store is referentially stable between writes and `now` steps once a
+  // minute, so all of these recompute only when there is a reason to.
   const dogs = useMemo(() => [...store.dogs].sort((a, b) => a.name.localeCompare(b.name)), [store]);
   const byDog = useMemo(() => logsByDog(store), [store]);
-  const table = useMemo(() => standings(dogs, byDog), [dogs, byDog]);
+  const table = useMemo(() => standings(dogs, byDog, now), [dogs, byDog, now]);
 
   const open = () => {
     // Picked once per opening rather than per render, so the hint does not
@@ -74,7 +81,7 @@ function DogListPage() {
 
       <ul className="mb-4 flex flex-col gap-2">
         {dogs.map((dog) => {
-          const latest = byDog.get(dog.id)?.[0];
+          const latest = newestLog(byDog.get(dog.id));
           return (
             <li key={dog.id}>
               <Link to="/dog/$dogId" params={{ dogId: dog.id }} className="block rounded-xl">
@@ -84,7 +91,7 @@ function DogListPage() {
                     <p className="text-muted-foreground truncate text-sm">
                       {latest === undefined
                         ? copy.awaitingFirst
-                        : `${timeAgo(latest.loggedAt)} · ${scoreInfo(latest.score).nickname}`}
+                        : `${timeAgo(latest.loggedAt, now)} · ${scoreInfo(latest.score).nickname}`}
                     </p>
                   </div>
                   {latest === undefined ? null : <ScoreBadge score={latest.score} />}

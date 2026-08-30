@@ -16,12 +16,10 @@ export function ErrorScreen({ error }: Readonly<{ error: unknown }>) {
   // `throw null` here would take out the last screen offering the backup.
   const details = error instanceof Error ? error.message : typeof error === "string" ? error : "";
 
-  let backup: string | null = null;
-  try {
-    backup = exportRawBackup();
-  } catch {
-    // This screen must never throw; without a backup we still offer a reload.
-  }
+  // exportRawBackup answers null rather than throwing, denied storage
+  // included - this screen must never throw, and without a backup it still
+  // offers a reload.
+  const backup = exportRawBackup();
 
   const saveBackup = () => {
     if (backup === null) {
