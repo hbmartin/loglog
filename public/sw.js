@@ -11,6 +11,19 @@
  * browser there is a new service worker to install at all.
  */
 const CACHE_VERSION = "loglog-__CACHE_VERSION__";
+
+/*
+ * Every file the build emitted under /assets/, injected by the same plugin.
+ *
+ * These are pre-cached rather than filled in lazily on first request. Because
+ * the cache name changes per deploy, activate throws away the generation the
+ * previous worker had accumulated - and that generation was the only offline
+ * copy of the code. Caching just the shell would leave the first offline load
+ * after a deploy with an index.html whose script tags resolve to nothing: a
+ * blank page, on the one screen holding the user's only copy of their data.
+ */
+const BUILD_ASSETS = __BUILD_ASSETS__;
+
 const OPTIONAL_SHELL = ["/", "/manifest.json", "/favicon.ico"];
 
 self.addEventListener("install", (event) => {
@@ -19,9 +32,10 @@ self.addEventListener("install", (event) => {
       .open(CACHE_VERSION)
       .then(async (cache) => {
         // Offline navigation depends on this entry, so installation must fail
-        // if it cannot be cached. The remaining shell assets are optional.
+        // if it cannot be cached. The rest is best-effort: one asset that
+        // fails to fetch should not leave the user with no worker at all.
         await cache.add("/index.html");
-        await Promise.allSettled(OPTIONAL_SHELL.map((url) => cache.add(url)));
+        await Promise.allSettled([...OPTIONAL_SHELL, ...BUILD_ASSETS].map((url) => cache.add(url)));
       })
       .then(() => self.skipWaiting()),
   );
@@ -37,6 +51,22 @@ self.addEventListener("activate", (event) => {
       .then(() => self.clients.claim()),
   );
 });
+
+/**
+ * True when the origin answered a request for a build asset with the SPA
+ * fallback instead of the asset.
+ *
+ * wrangler.json sets not_found_handling to "single-page-application", so a
+ * chunk that no longer exists - one a tab left open across a deploy is still
+ * importing - comes back as index.html with a 200. Writing that into the
+ * cache under a .js URL poisons the entry for the life of the cache: every
+ * later request is served HTML and the import fails on its MIME type, with no
+ * network round trip left to notice the file is simply gone.
+ */
+function isNavigationFallback(response) {
+  const type = response.headers.get("content-type") ?? "";
+  return type.split(";")[0].trim().toLowerCase() === "text/html";
+}
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
@@ -71,6 +101,12 @@ self.addEventListener("fetch", (event) => {
         (cached) =>
           cached ??
           fetch(request).then((response) => {
+            if (isNavigationFallback(response)) {
+              // The asset is gone, whatever the status line says. A real 404
+              // lets the import reject as a missing module rather than as a
+              // confusing MIME-type error, and keeps the HTML out of the cache.
+              return new Response(null, { status: 404, statusText: "Not Found" });
+            }
             if (response.ok) {
               const copy = response.clone();
               caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));

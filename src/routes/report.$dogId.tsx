@@ -27,19 +27,24 @@ function ReportPage() {
   const store = useStore();
   const dog = findDog(store, dogId);
 
+  // Captured once, so the timestamp on a printed page is the moment it was
+  // opened rather than whenever React last happened to re-render it. Every
+  // window below is measured from it too: a report is a snapshot, and its
+  // chart, its table and its printed timestamp all have to agree about when
+  // it was taken rather than each picking up its own Date.now().
+  const [preparedAt] = useState(() => new Date());
+  const asOf = preparedAt.getTime();
+
   const logs = useMemo(() => (dog === undefined ? [] : logsForDog(store, dog.id)), [store, dog]);
-  const series = useMemo(() => chartSeries(logs), [logs]);
+  const series = useMemo(() => chartSeries(logs, asOf), [logs, asOf]);
   // Oldest first: a clinical record reads forwards. toReversed() would need
   // Safari 16.4 and the build floor here is 16.0; withinDays already returned
   // a fresh array, so reversing it in place mutates nothing shared.
   const window30 = useMemo(
     // oxlint-disable-next-line unicorn/no-array-reverse
-    () => withinDays(logs, WINDOW_DAYS).reverse(),
-    [logs],
+    () => withinDays(logs, WINDOW_DAYS, asOf).reverse(),
+    [logs, asOf],
   );
-  // Captured once, so the timestamp on a printed page is the moment it was
-  // opened rather than whenever React last happened to re-render it.
-  const [preparedAt] = useState(() => new Date());
 
   if (dog === undefined) {
     throw notFound();

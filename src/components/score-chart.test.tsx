@@ -75,6 +75,34 @@ describe("ScoreChart", () => {
     );
   });
 
+  it("keeps every point selectable when two logs land on the same instant", () => {
+    // Identical timestamps collapse onto one x. Taking each point's own
+    // midpoints there hands the interior of the run a zero-width rect, which
+    // has no area for a pointer to land on: the middle dot of a cluster
+    // became unreachable again, which is the failure slices exist to prevent.
+    const { container } = render(
+      draw([log("first", DAY, 2), log("second", DAY, 7), log("later", 0, 6)]),
+    );
+    const targets = hitTargets(container);
+    expect(targets).toHaveLength(3);
+    expect(targets.map((rect) => Number(rect.getAttribute("width")))).not.toContain(0);
+
+    fireEvent.click(targets[0]);
+    expect(caption(container)).toContain("Firm, segmented");
+
+    fireEvent.click(targets[1]);
+    expect(caption(container)).toContain("Watery puddle");
+  });
+
+  it("marks off-ideal points by shape as well as colour", () => {
+    // The score ramp runs amber - emerald - red, so colour alone leaves a
+    // red/green-deficient reader, and any greyscale print, unable to tell
+    // which entries fell outside the band. Circle for ideal, diamond for not.
+    const { container } = render(draw([log("ideal", 3 * DAY, 3), log("off", DAY, 6)]));
+    expect(container.querySelectorAll("circle")).toHaveLength(2);
+    expect(container.querySelectorAll("path")).toHaveLength(2);
+  });
+
   it("keeps the selection on the same log when an earlier one is deleted", () => {
     // Selecting by index meant a deletion shifted every later point under the
     // selection: the caption pointed at a neighbour, and selecting the newest

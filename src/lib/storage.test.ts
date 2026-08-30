@@ -6,6 +6,7 @@ import {
   deleteLog,
   logsByDog,
   logsForDog,
+  newestLog,
   parseStore,
 } from "@/lib/storage";
 import { EMPTY_STORE, type PoopLog, type Store } from "@/lib/types";
@@ -196,23 +197,58 @@ describe("logsByDog", () => {
     expect(grouped.get("d2")).toHaveLength(1);
   });
 
-  it("orders each dog's logs newest first", () => {
+  it("keeps each dog's logs in store order rather than sorting them", () => {
+    // The list screen wants one entry per dog and newestLog finds it in a
+    // scan; sorting every history to read element [0] is work nothing asks
+    // for. logsForDog is still the ordered view.
     expect(
       logsByDog(store)
         .get("d1")
         ?.map((log) => log.id),
-    ).toEqual(["l3", "l4", "l1"]);
+    ).toEqual(["l1", "l3", "l4"]);
   });
 
   it("omits dogs with no logs rather than storing an empty array", () => {
     expect(logsByDog(store).has("d3")).toBe(false);
   });
 
-  it("agrees with logsForDog", () => {
-    expect(logsByDog(store).get("d1")).toEqual(logsForDog(store, "d1"));
+  it("holds the same logs logsForDog does", () => {
+    const grouped = logsByDog(store).get("d1") ?? [];
+    expect([...grouped].sort((a, b) => b.loggedAt.localeCompare(a.loggedAt))).toEqual(
+      logsForDog(store, "d1"),
+    );
   });
 
   it("returns an empty index for an empty store", () => {
     expect(logsByDog(EMPTY_STORE).size).toBe(0);
+  });
+});
+
+describe("newestLog", () => {
+  it("finds the most recent entry whatever order the group is in", () => {
+    const logs = [
+      poopLog("l1", "d1", "2026-01-02T10:00:00.000Z"),
+      poopLog("l3", "d1", "2026-01-09T10:00:00.000Z"),
+      poopLog("l4", "d1", "2026-01-04T10:00:00.000Z"),
+    ];
+    expect(newestLog(logs)?.id).toBe("l3");
+  });
+
+  it("agrees with logsForDog about which log is latest", () => {
+    // Both are read as "the latest log" on screen, so a tie must not resolve
+    // one way here and the other way there.
+    const store: Store = {
+      version: 1,
+      dogs: [{ id: "d1", name: "Rex", createdAt: "2026-01-01T00:00:00.000Z" }],
+      logs: [
+        poopLog("tie-a", "d1", "2026-01-09T10:00:00.000Z"),
+        poopLog("tie-b", "d1", "2026-01-09T10:00:00.000Z"),
+      ],
+    };
+    expect(newestLog(logsByDog(store).get("d1"))?.id).toBe(logsForDog(store, "d1")[0].id);
+  });
+
+  it("answers undefined for a dog with nothing logged", () => {
+    expect(newestLog(logsByDog(EMPTY_STORE).get("nobody"))).toBeUndefined();
   });
 });

@@ -5,7 +5,7 @@ import { defineConfig, type Plugin } from "vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
 import viteReact from "@vitejs/plugin-react";
-import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY, THEMES } from "./src/lib/theme";
+import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY, THEMES } from "./src/lib/theme.ts";
 
 /**
  * Substitutes the theme storage keys into the pre-paint script in index.html.
@@ -48,11 +48,8 @@ function themeKeys(): Plugin {
   };
 }
 
-/**
- * sha256 over every file emitted under `dir`, `exclude` aside, path and bytes
- * both - a rename with identical contents is still a different site.
- */
-async function hashOutput(dir: string, exclude: string): Promise<string> {
+/** Every file emitted under `dir`, `exclude` aside, as absolute paths. */
+async function emittedFiles(dir: string, exclude: string): Promise<string[]> {
   const files: string[] = [];
   const walk = async (current: string): Promise<void> => {
     const entries = await readdir(current, { withFileTypes: true });
@@ -69,9 +66,17 @@ async function hashOutput(dir: string, exclude: string): Promise<string> {
   };
   await walk(dir);
 
-  // Sorted, so the fingerprint does not follow the order the walk happened to
-  // finish in.
+  // Sorted, so neither the fingerprint nor the pre-cache list follows the
+  // order the walk happened to finish in.
   files.sort();
+  return files;
+}
+
+/**
+ * sha256 over `files`, path and bytes both - a rename with identical contents
+ * is still a different site.
+ */
+async function fingerprint(files: readonly string[], dir: string): Promise<string> {
   const contents = await Promise.all(files.map((file) => readFile(file)));
 
   const hash = createHash("sha256");
@@ -82,14 +87,29 @@ async function hashOutput(dir: string, exclude: string): Promise<string> {
   return hash.digest("hex").slice(0, 12);
 }
 
+/** Root-relative URLs for the emitted files under `assets/`. */
+function assetUrls(files: readonly string[], dir: string): string[] {
+  return files
+    .map((file) => path.relative(dir, file).split(path.sep))
+    .filter((segments) => segments[0] === "assets")
+    .map((segments) => `/${segments.join("/")}`);
+}
+
 /**
- * Stamps a fingerprint of the emitted site into public/sw.js.
+ * Stamps a fingerprint of the emitted site, and the list of emitted assets,
+ * into public/sw.js.
  *
- * public/ is copied verbatim, so the service worker cannot hash itself; see
- * the comment on CACHE_VERSION there for what a constant cache name costs.
+ * public/ is copied verbatim, so the service worker can neither hash itself
+ * nor see what the bundler emitted alongside it; see the comments on
+ * CACHE_VERSION and BUILD_ASSETS there for what each is load-bearing for.
  */
 function serviceWorkerVersion(): Plugin {
-  const MARKER = "__CACHE_VERSION__";
+  const MARKERS = {
+    __CACHE_VERSION__:
+      "Without it the service worker cache name never changes, so stale asset caches are never pruned.",
+    __BUILD_ASSETS__:
+      "Without it the worker pre-caches nothing, and the first offline load after a deploy has a shell with no code behind it.",
+  };
   let outDir = "dist";
 
   return {
@@ -101,19 +121,31 @@ function serviceWorkerVersion(): Plugin {
     async closeBundle() {
       const file = path.join(outDir, "sw.js");
       const source = await readFile(file, "utf8");
-      if (!source.includes(MARKER)) {
-        throw new Error(
-          `${file} no longer contains ${MARKER}. Without it the service worker cache name never changes, so stale asset caches are never pruned.`,
-        );
+      for (const [marker, consequence] of Object.entries(MARKERS)) {
+        if (!source.includes(marker)) {
+          throw new Error(`${file} no longer contains ${marker}. ${consequence}`);
+        }
       }
+
       // The emitted files themselves, not the bundle's key names. Chunk names
       // are content-hashed, but index.html and everything copied out of
       // public/ keep a fixed name - and those are what the install handler
       // caches. Off names alone, a deploy that touches only them leaves this
       // file byte-identical, so the browser sees no new worker to install and
       // the previous cache is never pruned.
-      const version = await hashOutput(outDir, file);
-      await writeFile(file, source.replaceAll(MARKER, version));
+      const files = await emittedFiles(outDir, file);
+      const substitutions: Record<string, string> = {
+        __CACHE_VERSION__: await fingerprint(files, outDir),
+        __BUILD_ASSETS__: JSON.stringify(assetUrls(files, outDir)),
+      };
+
+      const stamped = Object.entries(substitutions).reduce(
+        // A function, for the same reason the theme plugin above uses one: a
+        // `$` sequence in a value must be inserted, not expanded.
+        (current, [marker, value]) => current.replaceAll(marker, () => value),
+        source,
+      );
+      await writeFile(file, stamped);
     },
   };
 }
