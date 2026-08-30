@@ -32,10 +32,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
-  // cleanup() unmounts the tree but leaves what the theme effect wrote on
-  // <html>, so without this a later case sees "dark" applied by an earlier
-  // one and passes or fails on file order rather than on its own subject.
-  document.documentElement.className = "";
 });
 
 describe("the app", () => {

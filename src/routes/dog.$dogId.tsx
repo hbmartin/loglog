@@ -80,19 +80,25 @@ function DogPage() {
     [],
   );
 
-  // Every window below is measured from `now` rather than from each helper's
-  // own Date.now() default. Memoised on the logs alone, that default is
-  // captured at whatever moment the log list last changed and then frozen: an
-  // app left open overnight would still be counting an eight-day-old entry as
-  // "past 7 days", and only adding or deleting a log would move it.
-  const now = useNow();
-
   // store is referentially stable between writes and `now` steps once a
   // minute, so these recompute when the data actually changes rather than on
   // every score tap, colour tap or toggle of the confirmation. ScoreChart is
   // memoised on `series` and `label`, so a fresh object for either would
   // re-reconcile every dot, gridline and label in the SVG.
   const logs = useMemo(() => (dog === undefined ? [] : logsForDog(store, dog.id)), [store, dog]);
+
+  // Every window below is measured from `now` rather than from each helper's
+  // own Date.now() default. Memoised on the logs alone, that default is
+  // captured at whatever moment the log list last changed and then frozen: an
+  // app left open overnight would still be counting an eight-day-old entry as
+  // "past 7 days", and only adding or deleting a log would move it.
+  //
+  // The newest entry goes with it - logsForDog is newest first - because this
+  // is the screen that writes them. Without it a score tapped between ticks
+  // is dated after `now`, which every helper below reads as the future, and
+  // the tap it took to save moves nothing but the history list. See useNow.
+  const now = useNow(logs[0]?.loggedAt);
+
   const trend = useMemo(() => summarise(logs, now), [logs, now]);
   const series = useMemo(() => chartSeries(logs, now), [logs, now]);
   const streak = useMemo(() => regularity(logs, now), [logs, now]);
@@ -100,23 +106,27 @@ function DogPage() {
     () => achievements(logs, { exported: meta.exportedAt !== null }, now),
     [logs, meta.exportedAt, now],
   );
-  const offIdeal = useMemo(() => series.points.filter((point) => !point.ideal).length, [series]);
 
   // Hooks run before the notFound throw below, so this has to tolerate a dog
-  // that does not exist; the empty label is never rendered. The description
-  // points at the history section by whatever the current register calls it,
-  // so a screen-reader user is sent to a heading that is actually on the page.
+  // that does not exist; the empty label is never rendered.
+  //
+  // Plain clinical wording in either register, per the note at the top of
+  // lexicon.ts - a screen reader user should not have to decode a bit. The one
+  // exception is the heading it sends them to, which has to be the name that
+  // is actually on the page.
   const dogName = dog?.name;
   const historyHeading = copy.historyHeading;
-  const label = useMemo(
-    () =>
-      dogName === undefined
-        ? ""
-        : `${dogName}: Purina fecal score over the last 30 days. ${series.points.length} ${
-            series.points.length === 1 ? "log" : "logs"
-          }, ${offIdeal} outside the ideal 2–3 range. Every entry is listed under ${historyHeading}, below.`,
-    [dogName, series, offIdeal, historyHeading],
-  );
+  const label = useMemo(() => {
+    if (dogName === undefined) {
+      return "";
+    }
+    // Counted here rather than in a memo of its own: it is derived from
+    // `series` and used nowhere else, so a separate memo only adds a
+    // dependency that can never invalidate on its own.
+    const offIdeal = series.points.filter((point) => !point.ideal).length;
+    const logged = `${series.points.length} ${series.points.length === 1 ? "log" : "logs"}`;
+    return `${dogName}: Purina fecal score over the last 30 days. ${logged}, ${offIdeal} outside the ideal 2–3 range. Every entry is listed under ${historyHeading}, below.`;
+  }, [dogName, series, historyHeading]);
 
   if (dog === undefined) {
     throw notFound();

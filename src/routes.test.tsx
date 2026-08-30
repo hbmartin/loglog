@@ -61,6 +61,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
   window.history.pushState({}, "", "/");
 });
 
@@ -79,6 +80,29 @@ describe("the dog page", () => {
     const history = within(screen.getByRole("region", { name: "The record" }));
     expect(history.getAllByText("Log-like, moist")).toHaveLength(1);
     expect(screen.queryByText("The record is empty.")).toBeNull();
+  });
+
+  it("counts a score against every window the moment it is saved", async () => {
+    seed([]);
+    go(`/dog/${DOG_ID}`);
+    await screen.findByRole("heading", { name: "Rufus" });
+
+    // The clock the windows are measured from steps once a minute, so between
+    // ticks it lags real time. Freeze it where the mount left it and jump the
+    // wall clock twenty seconds, which is what tapping a score shortly after
+    // arriving on the screen actually looks like. Only Date is faked, so
+    // testing-library's own timers are untouched.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 20_000);
+
+    fireEvent.click(screen.getByRole("button", { name: /Log-like, moist/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Enter into the record/ }));
+
+    // Every helper in trend.ts drops logs dated after `now`, so this entry
+    // used to be filtered straight back out of all of them: the record below
+    // grew and nothing else on the screen moved for the rest of the minute.
+    expect(screen.getByRole("img", { name: /\b1 log, 0 outside/ })).toBeDefined();
+    expect(screen.getByText("1 day")).toBeDefined();
   });
 
   it("keeps colour and findings behind a chosen score", async () => {

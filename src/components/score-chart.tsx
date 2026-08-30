@@ -21,36 +21,57 @@ const toX = (x: number) => PAD_LEFT + x * PLOT_WIDTH;
 const toY = (y: number) => PAD_TOP + y * (PLOT_HEIGHT - PAD_TOP * 2);
 
 /**
+ * The narrowest slice worth handing a fingertip, in user units. The SVG lays
+ * 320 of them across a column that is 360-430 CSS px wide on a phone, so a
+ * unit is a little over a pixel and this is around a tenth of an inch: not a
+ * comfortable target, but the floor below which one stops existing in
+ * practice.
+ */
+const MIN_HIT_WIDTH = 10;
+
+/** The same distance in the 0-1 units the series is normalised to. */
+const MIN_HIT_X = MIN_HIT_WIDTH / PLOT_WIDTH;
+
+/**
  * The horizontal slice of the plot that selects each point: from halfway to
  * the previous point to halfway to the next, with the ends running out to the
  * plot edges. Circular hit targets large enough to tap overlap for anything
  * logged less than a day and a half apart, and the later circle paints over
  * the earlier one, so in daily use only the newest dot of a cluster can be
- * reached. Slices tile the plot instead: they never overlap, they leave no
- * dead space, and every point stays selectable however dense the data is.
+ * reached. Slices tile the plot instead: they never overlap and they leave no
+ * dead space.
  *
- * Points that land on the same x are handled as a run rather than one at a
- * time. Taking each one's own midpoints there would give the interior members
- * a slice of literally zero width - a <rect> with no area, which no pointer
- * can ever hit - and reinstate the unreachable middle dot this replaced. The
- * run splits its slice evenly instead, so a member is selectable even when
- * two logs land in the same millisecond.
+ * Points closer together than MIN_HIT_X are handled as a run that divides one
+ * slice evenly, rather than one at a time. Their own midpoints would give an
+ * interior member a slice as wide as the gap to its neighbours - for two logs
+ * an hour apart on a thirty-day window, half a CSS pixel, which is a <rect>
+ * no pointer can land on and the unreachable middle dot this replaced, back
+ * again. A run redistributes: three logs across one afternoon each get a
+ * third of the afternoon's slice. Dividing evenly can only raise the
+ * narrowest band, never lower it, because the run's total width is the same
+ * either way.
+ *
+ * It cannot promise MIN_HIT_WIDTH outright - thirty points on a thirty-day
+ * window leave under 10 units each however they are cut - only that no point
+ * is squeezed while a neighbour keeps a slice a hundred times wider.
  */
 function hitBands(points: readonly ChartPoint[]): { id: string; x: number; width: number }[] {
   const bands: { id: string; x: number; width: number }[] = [];
 
   for (let start = 0; start < points.length;) {
     let end = start + 1;
-    while (end < points.length && points[end].x === points[start].x) {
+    while (end < points.length && points[end].x - points[start].x < MIN_HIT_X) {
       end += 1;
     }
 
     // The neighbours outside the run, whose x values are strictly clear of it,
-    // so the run's own slice always has width to divide.
+    // so the run's own slice always has width to divide. Measured from the
+    // first member on the left and the last on the right, so that every dot in
+    // the run sits inside the span being divided.
     const previous = points[start - 1];
     const next = points[end];
     const left = previous === undefined ? 0 : (previous.x + points[start].x) / 2;
-    const right = next === undefined ? 1 : (points[start].x + next.x) / 2;
+    const right = next === undefined ? 1 : (points[end - 1].x + next.x) / 2;
     const step = (right - left) / (end - start);
 
     for (let index = start; index < end; index += 1) {
@@ -76,9 +97,13 @@ function diamond(cx: number, cy: number, r: number): string {
  * table view for this chart.
  *
  * Memoised because the page above re-renders on every score tap, every colour
- * tap and once a minute as the clock moves. Its props are memoised to match:
- * without both halves each of those re-renders diffs the whole SVG subtree
- * for a chart that has not changed.
+ * tap, every flag toggle and every save confirmation that appears and expires
+ * - none of which touch the plot - and its props are memoised to match:
+ * without both halves each of those diffs the whole SVG subtree for a chart
+ * that has not changed. The once-a-minute clock step is the one re-render
+ * this does not catch, because `series` is derived from `now` and so is a
+ * fresh object every tick. Quantising the clock for the chart alone would fix
+ * that and cost more than the 0.007 px of geometry it saves.
  */
 export const ScoreChart = memo(function ScoreChart({
   series,

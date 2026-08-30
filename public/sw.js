@@ -13,7 +13,9 @@
 const CACHE_VERSION = "loglog-__CACHE_VERSION__";
 
 /*
- * Every file the build emitted under /assets/, injected by the same plugin.
+ * The files the build emitted under /assets/ that offline navigation needs,
+ * injected by the same plugin. Fonts are deliberately not among them; see
+ * assetUrls in vite.config.ts for why.
  *
  * These are pre-cached rather than filled in lazily on first request. Because
  * the cache name changes per deploy, activate throws away the generation the
@@ -21,36 +23,23 @@ const CACHE_VERSION = "loglog-__CACHE_VERSION__";
  * copy of the code. Caching just the shell would leave the first offline load
  * after a deploy with an index.html whose script tags resolve to nothing: a
  * blank page, on the one screen holding the user's only copy of their data.
+ *
+ * Read through `typeof` rather than referenced bare, because public/ is copied
+ * verbatim and `vite dev` serves this file with the marker still in it. A bare
+ * undeclared identifier throws while the file is being evaluated, before a
+ * single listener is registered, so a stale registration on the dev origin
+ * would silently stop updating itself. An empty list is the honest answer
+ * there: unstamped, there is no build output to pre-cache.
  */
-const BUILD_ASSETS = __BUILD_ASSETS__;
+const BUILD_ASSETS = typeof __BUILD_ASSETS__ === "undefined" ? [] : __BUILD_ASSETS__;
 
-const OPTIONAL_SHELL = ["/", "/manifest.json", "/favicon.ico"];
+/** What the offline navigation fallback reads. */
+const SHELL = "/index.html";
 
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches
-      .open(CACHE_VERSION)
-      .then(async (cache) => {
-        // Offline navigation depends on this entry, so installation must fail
-        // if it cannot be cached. The rest is best-effort: one asset that
-        // fails to fetch should not leave the user with no worker at all.
-        await cache.add("/index.html");
-        await Promise.allSettled([...OPTIONAL_SHELL, ...BUILD_ASSETS].map((url) => cache.add(url)));
-      })
-      .then(() => self.skipWaiting()),
-  );
-});
+/** The same document under the URL the browser actually asked for. */
+const SHELL_ALIAS = "/";
 
-self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key))),
-      )
-      .then(() => self.clients.claim()),
-  );
-});
+const OPTIONAL_SHELL = ["/manifest.json", "/favicon.ico"];
 
 /**
  * True when the origin answered a request for a build asset with the SPA
@@ -67,6 +56,91 @@ function isNavigationFallback(response) {
   const type = response.headers.get("content-type") ?? "";
   return type.split(";")[0].trim().toLowerCase() === "text/html";
 }
+
+/**
+ * The same response with its `redirected` flag cleared.
+ *
+ * respondWith() answers a navigation with a network error if the response it
+ * is handed has that flag set, and Cache.put preserves it. Cloudflare's asset
+ * handler defaults html_handling to "auto-trailing-slash", which redirects
+ * /index.html to /, so the one entry the offline fallback depends on is
+ * exactly the one likely to carry it. Rebuilding from the body is the only
+ * way to drop it; the copy is identical otherwise.
+ */
+async function withoutRedirect(response) {
+  if (!response.redirected) {
+    return response;
+  }
+  return new Response(await response.blob(), {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+}
+
+/**
+ * Fetches `url` and writes it to `cache`, rejecting anything that came back
+ * as the SPA fallback rather than as the file asked for. `expectHtml` is for
+ * the shell entries, which are index.html and so answer HTML legitimately.
+ *
+ * cache.add() does the same fetch and put in one call, and checks only the
+ * status line. An /assets/ URL the edge cannot resolve - a request that raced
+ * a deploy, say - answers index.html with a 200, and add() would write that
+ * HTML into the cache keyed by the .js URL: the exact poisoning
+ * isNavigationFallback exists to prevent, arriving down the path that now
+ * caches almost everything.
+ */
+async function precache(cache, url, expectHtml) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`${url} answered ${response.status}`);
+  }
+  if (!expectHtml && isNavigationFallback(response)) {
+    throw new Error(`${url} answered with the SPA fallback rather than the file itself`);
+  }
+  await cache.put(url, await withoutRedirect(response));
+}
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE_VERSION)
+      .then(async (cache) => {
+        // All or nothing. A partial cache is not a smaller offline promise,
+        // it is a broken one: activate below deletes the previous generation,
+        // which held the only other copy of whatever failed here, and then
+        // claims every client - so the first offline navigation gets a shell
+        // whose imports resolve to nothing, with nothing recorded and no
+        // retry until the next deploy. Failing instead discards this worker
+        // before activate ever runs, leaving the previous worker and its
+        // complete cache serving, and the browser tries again on the next
+        // update check.
+        await Promise.all([
+          precache(cache, SHELL, true),
+          ...BUILD_ASSETS.map((url) => precache(cache, url, false)),
+        ]);
+
+        // Nothing offline reads these - the fallback matches SHELL, not "/" -
+        // so a missing favicon must not hold back a deploy.
+        await Promise.allSettled([
+          precache(cache, SHELL_ALIAS, true),
+          ...OPTIONAL_SHELL.map((url) => precache(cache, url, false)),
+        ]);
+      })
+      .then(() => self.skipWaiting()),
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(keys.filter((key) => key !== CACHE_VERSION).map((key) => caches.delete(key))),
+      )
+      .then(() => self.clients.claim()),
+  );
+});
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;
@@ -85,11 +159,16 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
+          // Stripped here as well as on the install path: a navigation the
+          // origin answered through a redirect would otherwise refresh the
+          // shell entry with a copy respondWith later refuses to serve.
           const copy = response.clone();
-          caches.open(CACHE_VERSION).then((cache) => cache.put("/index.html", copy));
+          caches
+            .open(CACHE_VERSION)
+            .then(async (cache) => cache.put(SHELL, await withoutRedirect(copy)));
           return response;
         })
-        .catch(() => caches.match("/index.html").then((cached) => cached ?? Response.error())),
+        .catch(() => caches.match(SHELL).then((cached) => cached ?? Response.error())),
     );
     return;
   }

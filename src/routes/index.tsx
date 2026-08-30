@@ -13,6 +13,7 @@ import { useLexicon, markExported } from "@/lib/meta";
 import { scoreInfo } from "@/lib/purina";
 import { addDog, logsByDog, newestLog, useStore } from "@/lib/storage";
 import { standings, timeAgo, type Standing } from "@/lib/trend";
+import type { PoopLog } from "@/lib/types";
 
 export const Route = createFileRoute("/")({
   component: DogListPage,
@@ -25,16 +26,44 @@ function DogListPage() {
   const [name, setName] = useState("");
   const [placeholder, setPlaceholder] = useState(copy.namePlaceholders[0]);
 
-  // The standings are a rolling week, so they are measured from `now` rather
-  // than from the Date.now() default inside standings: memoised on the data
-  // alone, that default freezes at whatever moment the store last changed and
-  // the week stops rolling. See useNow.
-  const now = useNow();
-
   // store is referentially stable between writes and `now` steps once a
   // minute, so all of these recompute only when there is a reason to.
   const dogs = useMemo(() => [...store.dogs].sort((a, b) => a.name.localeCompare(b.name)), [store]);
   const byDog = useMemo(() => logsByDog(store), [store]);
+
+  // Each dog's newest entry, resolved once per write. The row below needs
+  // exactly this, and newestLog scans a dog's whole history to find it, so
+  // calling it inside dogs.map() puts an O(total logs) run of locale
+  // comparisons in the render body - repeated on every keystroke in the
+  // add-dog field, every toggle of it, and every step of the clock.
+  const latest = useMemo(() => {
+    const newest = new Map<string, PoopLog>();
+    for (const [dogId, logs] of byDog) {
+      const log = newestLog(logs);
+      if (log !== undefined) {
+        newest.set(dogId, log);
+      }
+    }
+    return newest;
+  }, [byDog]);
+
+  // The standings are a rolling week, so they are measured from `now` rather
+  // than from the Date.now() default inside standings: memoised on the data
+  // alone, that default freezes at whatever moment the store last changed and
+  // the week stops rolling. The newest entry across the pack goes with it so
+  // that a log another tab wrote between ticks is not read as being in the
+  // future and left out of the table. See useNow.
+  const newestAt = useMemo(() => {
+    let newest: string | undefined;
+    for (const log of latest.values()) {
+      if (newest === undefined || log.loggedAt.localeCompare(newest) > 0) {
+        newest = log.loggedAt;
+      }
+    }
+    return newest;
+  }, [latest]);
+  const now = useNow(newestAt);
+
   const table = useMemo(() => standings(dogs, byDog, now), [dogs, byDog, now]);
 
   const open = () => {
@@ -81,7 +110,7 @@ function DogListPage() {
 
       <ul className="mb-4 flex flex-col gap-2">
         {dogs.map((dog) => {
-          const latest = newestLog(byDog.get(dog.id));
+          const newest = latest.get(dog.id);
           return (
             <li key={dog.id}>
               <Link to="/dog/$dogId" params={{ dogId: dog.id }} className="block rounded-xl">
@@ -89,12 +118,12 @@ function DogListPage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate font-medium">{dog.name}</p>
                     <p className="text-muted-foreground truncate text-sm">
-                      {latest === undefined
+                      {newest === undefined
                         ? copy.awaitingFirst
-                        : `${timeAgo(latest.loggedAt, now)} · ${scoreInfo(latest.score).nickname}`}
+                        : `${timeAgo(newest.loggedAt, now)} · ${scoreInfo(newest.score).nickname}`}
                     </p>
                   </div>
-                  {latest === undefined ? null : <ScoreBadge score={latest.score} />}
+                  {newest === undefined ? null : <ScoreBadge score={newest.score} />}
                   <ChevronRight className="text-muted-foreground size-4 shrink-0" />
                 </Card>
               </Link>
