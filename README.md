@@ -14,8 +14,22 @@ That also means: **clearing your browser data deletes your logs.** Export a CSV 
 
 ## Screens
 
-- `/` — the dogs you're tracking, each showing time since the last log and its score. Add a dog inline.
-- `/dog/$dogId` — the 1–7 grader, color swatches, flags, a 7-day trend summary, and full history.
+- `/` — the dogs you're tracking, each showing time since the last log and its score. Add a dog
+  inline. With two or more dogs logging in the same week, a **Standings** table ranks them by how
+  close they stayed to the ideal band.
+- `/dog/$dogId` — the 1–7 grader (each score drawn as well as numbered), color swatches, flags, a
+  7-day summary with a regularity streak, milestones, and full history.
+- `/wrapped` — a year in review computed from the local record: totals, mean score, signature score,
+  house color, peak hour, longest ideal run.
+- `/report/$dogId` — a printable clinical summary. The one screen a vet holds, and deliberately the
+  one screen with no jokes in it.
+
+### Lab coat mode
+
+All user-facing prose comes from `lib/lexicon.ts`, which holds two registers of the same copy:
+`field` (the default) and `lab` (po-faced clinical). Toggle it from the display menu, or by
+long-pressing the wordmark. It changes prose and nothing else — accessible names, the Purina
+wording, the CSV headers and `/report/$dogId` are identical in both.
 
 ## Development
 
@@ -61,10 +75,15 @@ src/
   lib/
     types.ts        # Dog, PoopLog, Store
     storage.ts      # localStorage + useSyncExternalStore, zod-validated on read
-    purina.ts       # the 1-7 scale, color swatches, flag labels
+    meta.ts         # UI state (copy register, export flag), kept out of the log store
+    lexicon.ts      # every user-facing string, in two registers
+    purina.ts       # the 1-7 scale, nicknames, color swatches, flag labels
     csv.ts          # RFC 4180 export with formula-injection escaping
-    trend.ts        # 7-day summary + relative timestamps
+    trend.ts        # summaries, streaks, standings, relative timestamps
+    achievements.ts # milestones derived from the record
+    wrapped.ts      # the year-in-review computation
     theme.ts        # theme keys, shared with the pre-paint script in index.html
+  components/       # score glyphs, chart, achievement shelf, save button
   components/ui/    # shadcn/ui (Base UI primitives)
 public/
   sw.js             # offline shell + immutable asset cache

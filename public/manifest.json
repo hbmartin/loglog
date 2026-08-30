@@ -2,7 +2,7 @@
   "id": "/",
   "name": "loglog",
   "short_name": "loglog",
-  "description": "Track your dog's poop on the Purina fecal scoring scale. Local-only, works offline.",
+  "description": "Veterinary-grade stool assessment. On your phone. In the rain. Holding a bag. Purina fecal scoring, local-only, works offline.",
   "lang": "en",
   "dir": "ltr",
   "categories": ["health", "lifestyle"],
@@ -10,7 +10,7 @@
   "scope": "/",
   "display": "standalone",
   "theme_color": "#7b4b26",
-  "background_color": "#ffffff",
+  "background_color": "#fcfaf5",
   "screenshots": [
     {
       "src": "/screenshots/narrow.png",

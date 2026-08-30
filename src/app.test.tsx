@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { RouterProvider } from "@tanstack/react-router";
 import { getRouter } from "@/router";
 import { __resetCache } from "@/lib/storage";
+import { __resetMetaCache } from "@/lib/meta";
 
 /**
  * A mount test, not a feature test: it exercises the router, the theme
@@ -25,6 +26,7 @@ beforeEach(() => {
   vi.stubGlobal("scrollTo", vi.fn());
   window.localStorage.clear();
   __resetCache();
+  __resetMetaCache();
 });
 
 afterEach(() => {
@@ -37,7 +39,17 @@ describe("the app", () => {
     render(<RouterProvider router={getRouter()} />);
 
     expect(await screen.findByRole("heading", { name: "loglog" })).toBeDefined();
-    expect(screen.getByRole("button", { name: /add new dog/i })).toBeDefined();
+    expect(screen.getByRole("button", { name: /enroll a subject/i })).toBeDefined();
+  });
+
+  it("renders the lab coat register when one is stored", async () => {
+    window.localStorage.setItem("loglog:meta:v1", JSON.stringify({ register: "lab" }));
+    render(<RouterProvider router={getRouter()} />);
+
+    await screen.findByRole("heading", { name: "loglog" });
+    // The whole point of the register is that it swaps prose without touching
+    // behaviour, so the control it renames is still the same control.
+    expect(screen.getByRole("button", { name: /register subject/i })).toBeDefined();
   });
 
   it("resolves the stored theme onto the document", async () => {
