@@ -1,5 +1,16 @@
 /* loglog service worker: offline shell + immutable asset cache. */
-const CACHE_VERSION = "loglog-v1";
+
+/*
+ * Replaced at build time with a fingerprint of the emitted bundle by the
+ * loglog:sw-version plugin in vite.config.ts. It has to change per deploy for
+ * two reasons: the activate handler below prunes every cache whose name is not
+ * this one, so a constant name evicts nothing and each deploy leaves another
+ * generation of /assets/* behind until the origin trips its storage quota and
+ * the browser drops the whole origin - localStorage, the only copy of the
+ * user's logs, included. And a byte difference in this file is what tells the
+ * browser there is a new service worker to install at all.
+ */
+const CACHE_VERSION = "loglog-__CACHE_VERSION__";
 const OPTIONAL_SHELL = ["/", "/manifest.json", "/favicon.ico"];
 
 self.addEventListener("install", (event) => {

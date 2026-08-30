@@ -170,9 +170,11 @@ export function deleteLog(id: string): void {
 
 /** Newest first. */
 export function logsForDog(store: Store, dogId: string): PoopLog[] {
+  // filter() already returns a fresh array, so sorting it in place mutates
+  // nothing shared. toSorted would need Safari 16.4; the floor here is 16.0.
   return store.logs
     .filter((log) => log.dogId === dogId)
-    .toSorted((a, b) => b.loggedAt.localeCompare(a.loggedAt));
+    .sort((a, b) => b.loggedAt.localeCompare(a.loggedAt));
 }
 
 /**

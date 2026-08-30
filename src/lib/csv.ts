@@ -32,9 +32,11 @@ export function toCsv(rows: readonly (readonly string[])[]): string {
 
 export function buildCsv(store: Store, dogs: readonly Dog[] = store.dogs): string {
   const names = new Map(dogs.map((dog) => [dog.id, dog.name]));
-  const logs: PoopLog[] = store.logs
+  // Spread-then-sort rather than toSorted: the build target floor is Safari
+  // 16.0 and toSorted needs 16.4. Same non-mutating result.
+  const logs: PoopLog[] = [...store.logs]
     .filter((log) => names.has(log.dogId))
-    .toSorted((a, b) => a.loggedAt.localeCompare(b.loggedAt));
+    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt));
 
   const rows: string[][] = [
     [...COLUMNS],

@@ -17,12 +17,22 @@
     <link rel="manifest" href="/manifest.json" />
     <script>
       // Resolve the theme before first paint so dark mode never flashes white.
-      // Runs before React mounts, so it cannot import THEME_STORAGE_KEY from
-      // src/components/theme-provider.tsx — keep the keys in sync by hand.
+      // This runs before React mounts and so cannot import from
+      // src/lib/theme.ts; the loglog:theme-keys plugin in vite.config.ts
+      // substitutes the markers below from that module and fails the build if
+      // they ever go missing. Reading the same keys and applying the same
+      // rule is what keeps this from disagreeing with the provider and
+      // flashing the wrong theme.
       (function () {
         try {
-          const theme =
-            localStorage.getItem("loglog:theme") ?? localStorage.getItem("vite-ui-theme");
+          const themes = __THEMES__;
+          const read = (key) => {
+            const value = localStorage.getItem(key);
+            return themes.includes(value) ? value : null;
+          };
+          // Validate before falling back, so a garbage value under the current
+          // key does not hide a real preference under the legacy one.
+          const theme = read("__THEME_STORAGE_KEY__") ?? read("__LEGACY_THEME_STORAGE_KEY__");
           const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
             ? "dark"
             : "light";

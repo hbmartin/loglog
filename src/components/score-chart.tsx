@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { scoreInfo } from "@/lib/purina";
-import type { ChartSeries } from "@/lib/trend";
+import type { ChartPoint, ChartSeries } from "@/lib/trend";
+import { cn } from "@/lib/utils";
 
 // User-space units. The SVG scales to its container; these only set the
 // internal aspect ratio and the room reserved for axis labels.
@@ -19,25 +20,51 @@ const toX = (x: number) => PAD_LEFT + x * PLOT_WIDTH;
 const toY = (y: number) => PAD_TOP + y * (PLOT_HEIGHT - PAD_TOP * 2);
 
 /**
+ * The horizontal slice of the plot that selects each point: from halfway to
+ * the previous point to halfway to the next, with the ends running out to the
+ * plot edges. Circular hit targets large enough to tap overlap for anything
+ * logged less than a day and a half apart, and the later circle paints over
+ * the earlier one, so in daily use only the newest dot of a cluster can be
+ * reached. Slices tile the plot instead: they never overlap, they leave no
+ * dead space, and every point stays selectable however dense the data is.
+ */
+function hitBands(points: readonly ChartPoint[]): { id: string; x: number; width: number }[] {
+  return points.map((point, index) => {
+    const previous = points[index - 1];
+    const next = points[index + 1];
+    const left = previous === undefined ? 0 : (previous.x + point.x) / 2;
+    const right = next === undefined ? 1 : (point.x + next.x) / 2;
+    return { id: point.id, x: toX(left), width: toX(right) - toX(left) };
+  });
+}
+
+/**
  * Purina score over the last 30 days, with the ideal 2-3 band shaded.
  *
  * One series, so no legend: the heading names what is plotted. The tooltip
  * only enhances - every value is also in the history list below, which is the
  * table view for this chart.
  */
-export function ScoreChart({ series, label }: Readonly<{ series: ChartSeries; label: string }>) {
+export function ScoreChart({
+  series,
+  label,
+  className,
+}: Readonly<{ series: ChartSeries; label: string; className?: string }>) {
   const { points, ticks, band } = series;
   const titleId = useId();
-  const [active, setActive] = useState<number | null>(null);
+  // Keyed by log id rather than index: deleting a log shifts every later
+  // index, which would silently retarget a held selection at its neighbour
+  // and, for the last point, leave the index pointing past the end.
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   if (points.length === 0) {
     return null;
   }
 
-  const activePoint = active === null ? null : points[active];
+  const activePoint = points.find((point) => point.id === activeId) ?? null;
 
   return (
-    <figure className="m-0">
+    <figure className={cn("m-0", className)}>
       <svg
         viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
         // Uniform scaling: stretching would turn the dots into ellipses.
@@ -47,7 +74,7 @@ export function ScoreChart({ series, label }: Readonly<{ series: ChartSeries; la
         // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role
         role="img"
         aria-labelledby={titleId}
-        onPointerLeave={() => setActive(null)}
+        onPointerLeave={() => setActiveId(null)}
       >
         <title id={titleId}>{label}</title>
 
@@ -100,25 +127,15 @@ export function ScoreChart({ series, label }: Readonly<{ series: ChartSeries; la
           />
         ) : null}
 
-        {points.map((point, index) => (
-          <g key={point.loggedAt + String(index)}>
+        {points.map((point) => (
+          <g key={point.id}>
             {/* 2px surface ring keeps dots legible where they overlap. */}
             <circle cx={toX(point.x)} cy={toY(point.y)} r={6} className="fill-background" />
             <circle
               cx={toX(point.x)}
               cy={toY(point.y)}
-              r={4}
+              r={point.id === activeId ? 5 : 4}
               className={point.ideal ? "fill-primary" : "fill-destructive"}
-            />
-            {/* Hit target well above the 4px mark, per interaction specs. */}
-            <circle
-              cx={toX(point.x)}
-              cy={toY(point.y)}
-              r={12}
-              fill="transparent"
-              className="cursor-pointer"
-              onPointerEnter={() => setActive(index)}
-              onClick={() => setActive(index)}
             />
           </g>
         ))}
@@ -133,6 +150,21 @@ export function ScoreChart({ series, label }: Readonly<{ series: ChartSeries; la
           >
             {tick.label}
           </text>
+        ))}
+
+        {/* Last, so these win the hit test over the marks they cover. */}
+        {hitBands(points).map((hit) => (
+          <rect
+            key={hit.id}
+            x={hit.x}
+            y={PAD_TOP}
+            width={hit.width}
+            height={PLOT_HEIGHT - PAD_TOP * 2}
+            fill="transparent"
+            className="cursor-pointer"
+            onPointerEnter={() => setActiveId(hit.id)}
+            onClick={() => setActiveId(hit.id)}
+          />
         ))}
       </svg>
 

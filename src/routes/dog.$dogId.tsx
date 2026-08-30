@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ChevronLeft, Download, Trash2 } from "lucide-react";
 import {
@@ -44,13 +44,19 @@ function DogPage() {
   const [flags, setFlags] = useState<PoopFlag[]>([]);
   const [justSaved, setJustSaved] = useState(false);
 
+  // store is referentially stable between writes, so these recompute only
+  // when the data actually changes. Without them a score tap, a colour tap or
+  // either end of the "Logged." toggle re-runs the filter, the sort, the
+  // summary reduce and the whole chart geometry pass - and a fresh `series`
+  // object re-reconciles every dot, gridline and label in the SVG.
+  const logs = useMemo(() => (dog === undefined ? [] : logsForDog(store, dog.id)), [store, dog]);
+  const trend = useMemo(() => summarise(logs), [logs]);
+  const series = useMemo(() => chartSeries(logs), [logs]);
+  const offIdeal = useMemo(() => series.points.filter((point) => !point.ideal).length, [series]);
+
   if (dog === undefined) {
     throw notFound();
   }
-
-  const logs = logsForDog(store, dog.id);
-  const trend = summarise(logs);
-  const series = chartSeries(logs);
 
   const toggleFlag = (flag: PoopFlag) => {
     setFlags((current) =>
@@ -88,18 +94,14 @@ function DogPage() {
 
       <TrendSummary trend={trend} lastLoggedAt={logs[0]?.loggedAt} />
 
-      {series.points.length === 0 ? null : (
-        <div className="mt-4">
-          <ScoreChart
-            series={series}
-            label={`${dog.name}: Purina fecal score over the last 30 days. ${
-              series.points.length
-            } ${series.points.length === 1 ? "log" : "logs"}, ${
-              series.points.filter((point) => !point.ideal).length
-            } outside the ideal 2–3 range. Every entry is listed under History below.`}
-          />
-        </div>
-      )}
+      {/* ScoreChart renders nothing without points, so no guard here. */}
+      <ScoreChart
+        className="mt-4"
+        series={series}
+        label={`${dog.name}: Purina fecal score over the last 30 days. ${series.points.length} ${
+          series.points.length === 1 ? "log" : "logs"
+        }, ${offIdeal} outside the ideal 2–3 range. Every entry is listed under History below.`}
+      />
 
       <Separator className="my-5" />
 
