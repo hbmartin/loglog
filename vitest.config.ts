@@ -13,5 +13,9 @@ export default defineConfig({
     // and an include that cannot reach them makes them untestable by
     // construction.
     include: ["src/**/*.test.{ts,tsx}"],
+    // Repairs the localStorage that Node >= 24 shadows out of the jsdom
+    // environment; see the file for why. It no-ops under the node
+    // environment, so the pure-module tests stay DOM-free.
+    setupFiles: ["./src/test-setup.ts"],
   },
 });

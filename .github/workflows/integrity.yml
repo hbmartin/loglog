@@ -76,7 +76,10 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "22"
+          # 24, not 22: Node >= 24 defines the localStorage stub that shadows
+          # jsdom's out of the test environment (see src/test-setup.ts), and a
+          # CI that never runs that path is how the broken version shipped.
+          node-version: "24"
           cache: pnpm
 
       - name: Install dependencies

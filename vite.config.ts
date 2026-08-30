@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { defineConfig, type Plugin } from "vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
@@ -16,10 +16,14 @@ import { LEGACY_THEME_STORAGE_KEY, THEME_STORAGE_KEY, THEMES } from "./src/lib/t
  * drift and flash the wrong theme.
  */
 function themeKeys(): Plugin {
+  // Every value is stringified and every marker stands unquoted in the script,
+  // so a key holding a quote or a backslash cannot break out of its literal. A
+  // parse error there would kill the whole pre-paint block, its own try/catch
+  // included, and flash the wrong theme on every load with nothing reported.
   const substitutions: Record<string, string> = {
     __THEMES__: JSON.stringify(THEMES),
-    __THEME_STORAGE_KEY__: THEME_STORAGE_KEY,
-    __LEGACY_THEME_STORAGE_KEY__: LEGACY_THEME_STORAGE_KEY,
+    __THEME_STORAGE_KEY__: JSON.stringify(THEME_STORAGE_KEY),
+    __LEGACY_THEME_STORAGE_KEY__: JSON.stringify(LEGACY_THEME_STORAGE_KEY),
   };
 
   return {
@@ -35,7 +39,9 @@ function themeKeys(): Plugin {
               `index.html no longer contains ${marker}. The pre-paint theme script must keep it, or the theme resolves from the wrong key and flashes on load.`,
             );
           }
-          return current.replaceAll(marker, value);
+          // A function, so that a `$&` or `$'` sequence inside a key is
+          // inserted rather than expanded as a replacement pattern.
+          return current.replaceAll(marker, () => value);
         }, html);
       },
     },
@@ -43,7 +49,41 @@ function themeKeys(): Plugin {
 }
 
 /**
- * Stamps a fingerprint of the emitted bundle into public/sw.js.
+ * sha256 over every file emitted under `dir`, `exclude` aside, path and bytes
+ * both - a rename with identical contents is still a different site.
+ */
+async function hashOutput(dir: string, exclude: string): Promise<string> {
+  const files: string[] = [];
+  const walk = async (current: string): Promise<void> => {
+    const entries = await readdir(current, { withFileTypes: true });
+    await Promise.all(
+      entries.map(async (entry) => {
+        const full = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          await walk(full);
+        } else if (full !== exclude) {
+          files.push(full);
+        }
+      }),
+    );
+  };
+  await walk(dir);
+
+  // Sorted, so the fingerprint does not follow the order the walk happened to
+  // finish in.
+  files.sort();
+  const contents = await Promise.all(files.map((file) => readFile(file)));
+
+  const hash = createHash("sha256");
+  for (const [index, file] of files.entries()) {
+    hash.update(path.relative(dir, file));
+    hash.update(contents[index]);
+  }
+  return hash.digest("hex").slice(0, 12);
+}
+
+/**
+ * Stamps a fingerprint of the emitted site into public/sw.js.
  *
  * public/ is copied verbatim, so the service worker cannot hash itself; see
  * the comment on CACHE_VERSION there for what a constant cache name costs.
@@ -51,21 +91,12 @@ function themeKeys(): Plugin {
 function serviceWorkerVersion(): Plugin {
   const MARKER = "__CACHE_VERSION__";
   let outDir = "dist";
-  let version = "dev";
 
   return {
     name: "loglog:sw-version",
     apply: "build",
     configResolved(config) {
       outDir = path.resolve(config.root, config.build.outDir);
-    },
-    generateBundle(_options, bundle) {
-      // Asset filenames are content-hashed, so this changes when, and only
-      // when, something the service worker would cache changes.
-      version = createHash("sha256")
-        .update(Object.keys(bundle).sort().join("\n"))
-        .digest("hex")
-        .slice(0, 12);
     },
     async closeBundle() {
       const file = path.join(outDir, "sw.js");
@@ -75,6 +106,13 @@ function serviceWorkerVersion(): Plugin {
           `${file} no longer contains ${MARKER}. Without it the service worker cache name never changes, so stale asset caches are never pruned.`,
         );
       }
+      // The emitted files themselves, not the bundle's key names. Chunk names
+      // are content-hashed, but index.html and everything copied out of
+      // public/ keep a fixed name - and those are what the install handler
+      // caches. Off names alone, a deploy that touches only them leaves this
+      // file byte-identical, so the browser sees no new worker to install and
+      // the previous cache is never pruned.
+      const version = await hashOutput(outDir, file);
       await writeFile(file, source.replaceAll(MARKER, version));
     },
   };
