@@ -32,7 +32,7 @@
           };
           // Validate before falling back, so a garbage value under the current
           // key does not hide a real preference under the legacy one.
-          const theme = read("__THEME_STORAGE_KEY__") ?? read("__LEGACY_THEME_STORAGE_KEY__");
+          const theme = read(__THEME_STORAGE_KEY__) ?? read(__LEGACY_THEME_STORAGE_KEY__);
           const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
             ? "dark"
             : "light";
