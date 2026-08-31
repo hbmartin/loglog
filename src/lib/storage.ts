@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { z } from "zod";
+import { compareTime } from "@/lib/trend";
 import {
   EMPTY_STORE,
   POOP_COLORS,
@@ -174,7 +175,7 @@ export function logsForDog(store: Store, dogId: string): PoopLog[] {
   // nothing shared. toSorted would need Safari 16.4; the floor here is 16.0.
   return store.logs
     .filter((log) => log.dogId === dogId)
-    .sort((a, b) => b.loggedAt.localeCompare(a.loggedAt));
+    .sort((a, b) => compareTime(b.loggedAt, a.loggedAt));
 }
 
 /**
@@ -203,16 +204,26 @@ export function logsByDog(store: Store): Map<string, PoopLog[]> {
 }
 
 /**
- * The most recent entry, or undefined for a dog with nothing logged.
+ * The most recent entry, or undefined for a dog with nothing logged - or
+ * nothing datable, since a timestamp that will not parse cannot be the newest
+ * of anything.
  *
  * Ties keep the earlier one in store order, which is what logsForDog's stable
  * sort does too - the two must not disagree about which log is "latest".
+ *
+ * Compared as instants rather than as strings, for the reason compareTime
+ * gives; parsed once per log rather than once per comparison, because this
+ * runs over a dog's whole history on the list screen.
  */
 export function newestLog(logs: readonly PoopLog[] | undefined): PoopLog | undefined {
   let newest: PoopLog | undefined;
+  // An unparseable timestamp compares false against this and so can never win.
+  let newestAt = Number.NEGATIVE_INFINITY;
   for (const log of logs ?? []) {
-    if (newest === undefined || log.loggedAt.localeCompare(newest.loggedAt) > 0) {
+    const at = Date.parse(log.loggedAt);
+    if (at > newestAt) {
       newest = log;
+      newestAt = at;
     }
   }
   return newest;

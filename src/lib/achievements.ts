@@ -1,5 +1,5 @@
 import { scoreInfo } from "@/lib/purina";
-import { DAWN_HOUR, dayKey } from "@/lib/trend";
+import { DAWN_HOUR, dayKey, hasHappened } from "@/lib/trend";
 import { POOP_COLORS, type PoopLog } from "@/lib/types";
 
 /**
@@ -46,8 +46,7 @@ export function longestIdealRun(logs: readonly PoopLog[], now = Date.now()): num
   const spotless = new Map<string, boolean>();
   for (const log of logs) {
     const at = new Date(log.loggedAt);
-    const time = at.getTime();
-    if (Number.isNaN(time) || time > now) {
+    if (!hasHappened(at.getTime(), now)) {
       continue;
     }
     const key = dayKey(at);
@@ -57,8 +56,10 @@ export function longestIdealRun(logs: readonly PoopLog[], now = Date.now()): num
   const days = [...spotless.entries()]
     .filter(([, allIdeal]) => allIdeal)
     .map(([key]) => key)
-    // ISO-shaped keys, so lexicographic order is chronological order.
-    .sort((a, b) => a.localeCompare(b));
+    // Fixed-width YYYY-MM-DD keys, so plain string order is chronological
+    // order. localeCompare is neither of those things - see compareTime - and
+    // here it would also be a collation per comparison for nothing.
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 
   let best = 0;
   let run = 0;
@@ -85,14 +86,20 @@ export function achievements(
   options: Readonly<{ exported: boolean }> = { exported: false },
   now = Date.now(),
 ): Achievement[] {
-  const idealRun = longestIdealRun(logs, now);
-  const namesakes = has(logs, (log) => log.score === 3);
-  const codeBrowns = has(logs, (log) => log.score === 7);
-  const dawns = has(logs, (log) => {
-    const hour = new Date(log.loggedAt).getHours();
-    return !Number.isNaN(hour) && hour < DAWN_HOUR;
-  });
-  const colors = new Set(logs.flatMap((log) => (log.color === null ? [] : [log.color])));
+  // Every milestone is scored on this rather than on `logs`, not just the
+  // streak. A record carrying a log dated 2030 - clock skew, or an edited
+  // store, which is exactly what the guard inside longestIdealRun exists for -
+  // would otherwise unlock Code Brown, The Namesake, Dawn Patrol, Full
+  // Spectrum and Century today, on the strength of something that has not
+  // happened. Unparseable entries go the same way, which is why the hour below
+  // no longer has to check for one.
+  const happened = logs.filter((log) => hasHappened(new Date(log.loggedAt).getTime(), now));
+
+  const idealRun = longestIdealRun(happened, now);
+  const namesakes = has(happened, (log) => log.score === 3);
+  const codeBrowns = has(happened, (log) => log.score === 7);
+  const dawns = has(happened, (log) => new Date(log.loggedAt).getHours() < DAWN_HOUR);
+  const colors = new Set(happened.flatMap((log) => (log.color === null ? [] : [log.color])));
 
   return [
     {
@@ -135,7 +142,7 @@ export function achievements(
       id: "century",
       name: "Century",
       blurb: "One hundred entries. This is a hobby now.",
-      ...earned(logs.length, CENTURY_GOAL),
+      ...earned(happened.length, CENTURY_GOAL),
     },
   ];
 }

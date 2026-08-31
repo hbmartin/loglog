@@ -35,6 +35,25 @@ function caption(container: HTMLElement): string {
   return container.querySelector("figcaption")?.textContent ?? "";
 }
 
+/**
+ * The dot centres in user units, read out of the polyline the component draws
+ * through them rather than recomputed here - the point of these cases is where
+ * the slices sit relative to what is painted, so the two have to come from the
+ * same geometry.
+ */
+function dotXs(container: HTMLElement): number[] {
+  const drawn = container.querySelector("polyline")?.getAttribute("points") ?? "";
+  return drawn.split(" ").map((pair) => Number(pair.split(",")[0]));
+}
+
+/** The index of the slice a tap at user-space `x` lands in, or -1. */
+function bandAt(targets: readonly SVGRectElement[], x: number): number {
+  return targets.findIndex((rect) => {
+    const left = Number(rect.getAttribute("x"));
+    return x >= left && x <= left + Number(rect.getAttribute("width"));
+  });
+}
+
 describe("ScoreChart", () => {
   it("draws an empty state, not a chart, when there is nothing in the window", () => {
     const { container } = render(draw([log("old", 45 * DAY, 3)]));
@@ -54,6 +73,25 @@ describe("ScoreChart", () => {
 
     fireEvent.click(targets[1]);
     expect(caption(container)).toContain("Shapeless mush");
+  });
+
+  it("puts each dot in the slice that selects it", () => {
+    // Two logs a day apart with a clear month behind them. Widening the run
+    // rule to "too close to tap" without moving the divided window with it
+    // split the plot down the middle: one rect per point, in the right order,
+    // both of them nowhere near a dot. Every tap on either visible dot
+    // selected the newer log, and the older one could only be reached by
+    // tapping empty plot at the far left - the unreachable dot the slices
+    // exist to prevent, back again.
+    const { container } = render(draw([log("morning", DAY + 2 * HOUR, 2), log("evening", DAY, 6)]));
+    const targets = hitTargets(container);
+
+    dotXs(container).forEach((x, index) => {
+      expect(bandAt(targets, x)).toBe(index);
+    });
+
+    fireEvent.click(targets[bandAt(targets, dotXs(container)[0])]);
+    expect(caption(container)).toContain("Firm, segmented");
   });
 
   it("tiles the hit targets edge to edge without overlapping", () => {
@@ -109,12 +147,24 @@ describe("ScoreChart", () => {
         log("evening", 10 * DAY, 7),
       ]),
     );
-    const widths = hitTargets(container).map((rect) => Number(rect.getAttribute("width")));
+    const targets = hitTargets(container);
+    const widths = targets.map((rect) => Number(rect.getAttribute("width")));
     expect(widths).toHaveLength(4);
-    expect(Math.min(...widths)).toBeGreaterThan(10);
+    // MIN_HIT_WIDTH is 10 user units, and a cluster gets exactly that each;
+    // the slack is float noise, not a fourth significant digit of intent.
+    expect(Math.min(...widths)).toBeGreaterThan(9.99);
+
+    // And the afternoon's three slices sit over the afternoon rather than
+    // spreading across the plot: a tap anywhere on the cluster lands in one of
+    // them, never in last week's.
+    const dots = dotXs(container);
+    expect(bandAt(targets, dots[0])).toBe(0);
+    for (const x of dots.slice(1)) {
+      expect(bandAt(targets, x)).toBeGreaterThan(0);
+    }
 
     // Still one slice per log, still in plot order, each selecting its own.
-    fireEvent.click(hitTargets(container)[2]);
+    fireEvent.click(targets[2]);
     expect(caption(container)).toContain("Shapeless mush");
   });
 

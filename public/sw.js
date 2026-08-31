@@ -24,35 +24,53 @@ const CACHE_VERSION = "loglog-__CACHE_VERSION__";
  * after a deploy with an index.html whose script tags resolve to nothing: a
  * blank page, on the one screen holding the user's only copy of their data.
  *
- * Read through `typeof` rather than referenced bare, because public/ is copied
- * verbatim and `vite dev` serves this file with the marker still in it. A bare
- * undeclared identifier throws while the file is being evaluated, before a
- * single listener is registered, so a stale registration on the dev origin
- * would silently stop updating itself. An empty list is the honest answer
- * there: unstamped, there is no build output to pre-cache.
+ * Guarded on a marker of its own rather than on `typeof __BUILD_ASSETS__`,
+ * which names the list twice: the substitution then writes the whole thing
+ * into the file twice, in a worker _headers marks no-cache and the browser
+ * therefore re-downloads in full on every load.
+ *
+ * The guard is still a `typeof`, because public/ is copied verbatim and `vite
+ * dev` serves this file with the markers still in it. A bare undeclared
+ * identifier throws while the file is being evaluated, before a single
+ * listener is registered, so a stale registration on the dev origin would
+ * silently stop updating itself. Naming the list in the branch that guard does
+ * not take is safe - an untaken branch is never evaluated - and an empty list
+ * is the honest answer there: unstamped, there is no build output to pre-cache.
  */
-const BUILD_ASSETS = typeof __BUILD_ASSETS__ === "undefined" ? [] : __BUILD_ASSETS__;
+const BUILD_ASSETS = typeof __BUILD_STAMPED__ === "undefined" ? [] : __BUILD_ASSETS__;
 
-/** What the offline navigation fallback reads. */
+/**
+ * What the offline navigation fallback reads, and the only key the document is
+ * cached under. Caching it a second time as "/" - the URL the browser actually
+ * asked for - fetches the same bytes twice, because Cloudflare's
+ * auto-trailing-slash handling redirects one to the other, and nothing would
+ * ever read the second copy: the fallback below matches SHELL, not the
+ * request.
+ */
 const SHELL = "/index.html";
 
-/** The same document under the URL the browser actually asked for. */
-const SHELL_ALIAS = "/";
-
+/**
+ * Cached beside the shell and served from it, so an app launched offline still
+ * has its icon and its manifest. Optional in that a favicon the origin cannot
+ * produce must not hold back a deploy - neither file is needed to read a log.
+ */
 const OPTIONAL_SHELL = ["/manifest.json", "/favicon.ico"];
 
 /**
- * True when the origin answered a request for a build asset with the SPA
- * fallback instead of the asset.
+ * True when a response carries an HTML document.
  *
- * wrangler.json sets not_found_handling to "single-page-application", so a
- * chunk that no longer exists - one a tab left open across a deploy is still
- * importing - comes back as index.html with a 200. Writing that into the
- * cache under a .js URL poisons the entry for the life of the cache: every
- * later request is served HTML and the import fails on its MIME type, with no
+ * Which is a disqualification everywhere but the shell. wrangler.json sets
+ * not_found_handling to "single-page-application", so a request for a file
+ * that no longer exists - a chunk a tab left open across a deploy is still
+ * importing - comes back as index.html with a 200. Writing that into the cache
+ * under a .js URL poisons the entry for the life of the cache: every later
+ * request is served HTML and the import fails on its MIME type, with no
  * network round trip left to notice the file is simply gone.
+ *
+ * On the navigation path it is the requirement rather than the disqualifier:
+ * only a document belongs in the shell entry.
  */
-function isNavigationFallback(response) {
+function isHtml(response) {
   const type = response.headers.get("content-type") ?? "";
   return type.split(";")[0].trim().toLowerCase() === "text/html";
 }
@@ -71,10 +89,20 @@ async function withoutRedirect(response) {
   if (!response.redirected) {
     return response;
   }
+  // Everything but the two headers that describe the transfer rather than the
+  // content. fetch hands the body over already decoded, so the original
+  // Content-Encoding and the compressed Content-Length beside it both describe
+  // bytes this copy does not have - and a browser that honours them on a
+  // service-worker response fails to decode, or truncates, the one entry the
+  // offline fallback exists to serve.
+  const headers = new Headers(response.headers);
+  headers.delete("content-encoding");
+  headers.delete("content-length");
+
   return new Response(await response.blob(), {
     status: response.status,
     statusText: response.statusText,
-    headers: response.headers,
+    headers,
   });
 }
 
@@ -86,16 +114,15 @@ async function withoutRedirect(response) {
  * cache.add() does the same fetch and put in one call, and checks only the
  * status line. An /assets/ URL the edge cannot resolve - a request that raced
  * a deploy, say - answers index.html with a 200, and add() would write that
- * HTML into the cache keyed by the .js URL: the exact poisoning
- * isNavigationFallback exists to prevent, arriving down the path that now
- * caches almost everything.
+ * HTML into the cache keyed by the .js URL: the exact poisoning isHtml exists
+ * to prevent, arriving down the path that now caches almost everything.
  */
 async function precache(cache, url, expectHtml) {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`${url} answered ${response.status}`);
   }
-  if (!expectHtml && isNavigationFallback(response)) {
+  if (!expectHtml && isHtml(response)) {
     throw new Error(`${url} answered with the SPA fallback rather than the file itself`);
   }
   await cache.put(url, await withoutRedirect(response));
@@ -120,12 +147,10 @@ self.addEventListener("install", (event) => {
           ...BUILD_ASSETS.map((url) => precache(cache, url, false)),
         ]);
 
-        // Nothing offline reads these - the fallback matches SHELL, not "/" -
-        // so a missing favicon must not hold back a deploy.
-        await Promise.allSettled([
-          precache(cache, SHELL_ALIAS, true),
-          ...OPTIONAL_SHELL.map((url) => precache(cache, url, false)),
-        ]);
+        // Served by the fetch handler below, but nothing on screen depends on
+        // them, so one the origin cannot produce must not discard the worker
+        // and with it the pre-cache that just succeeded.
+        await Promise.allSettled(OPTIONAL_SHELL.map((url) => precache(cache, url, false)));
       })
       .then(() => self.skipWaiting()),
   );
@@ -159,13 +184,28 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          // Stripped here as well as on the install path: a navigation the
-          // origin answered through a redirect would otherwise refresh the
-          // shell entry with a copy respondWith later refuses to serve.
-          const copy = response.clone();
-          caches
-            .open(CACHE_VERSION)
-            .then(async (cache) => cache.put(SHELL, await withoutRedirect(copy)));
+          // Only from a response that is plausibly the shell. Unguarded, a
+          // Cloudflare 5xx page - or any error page the origin serves as HTML
+          // - is written over the good index.html, and every later offline
+          // navigation is answered from cache with that error page,
+          // permanently, until a successful online navigation replaces it: on
+          // the one screen holding the user's only copy of their data. A
+          // captive portal answering 200 with its own login page is the case
+          // this cannot tell apart, and nothing here can.
+          //
+          // The redirect strip the install path needs is not repeated: a
+          // navigation request carries redirect "manual", so a 3xx arrives as
+          // an opaqueredirect with status 0, which `ok` already rejects.
+          if (response.ok && isHtml(response)) {
+            const copy = response.clone();
+            caches
+              .open(CACHE_VERSION)
+              .then((cache) => cache.put(SHELL, copy))
+              // A put that fails leaves the previous entry in place, which is
+              // the outcome this branch wants anyway. Unhandled it would be an
+              // unhandled rejection on every navigation that hit it.
+              .catch(() => {});
+          }
           return response;
         })
         .catch(() => caches.match(SHELL).then((cached) => cached ?? Response.error())),
@@ -173,14 +213,19 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Build output is content-hashed, so a hit is always current.
-  if (url.pathname.startsWith("/assets/")) {
+  // Build output is content-hashed, and every other entry belongs to a cache
+  // the next deploy throws away, so a hit is always current.
+  //
+  // The optional entries are matched here as well, which is what makes
+  // pre-caching them worth a request: reachable from no path at all, they were
+  // bytes stored on install for nothing.
+  if (url.pathname.startsWith("/assets/") || OPTIONAL_SHELL.includes(url.pathname)) {
     event.respondWith(
       caches.match(request).then(
         (cached) =>
           cached ??
           fetch(request).then((response) => {
-            if (isNavigationFallback(response)) {
+            if (isHtml(response)) {
               // The asset is gone, whatever the status line says. A real 404
               // lets the import reject as a missing module rather than as a
               // confusing MIME-type error, and keeps the HTML out of the cache.

@@ -92,12 +92,7 @@ function DogPage() {
   // captured at whatever moment the log list last changed and then frozen: an
   // app left open overnight would still be counting an eight-day-old entry as
   // "past 7 days", and only adding or deleting a log would move it.
-  //
-  // The newest entry goes with it - logsForDog is newest first - because this
-  // is the screen that writes them. Without it a score tapped between ticks
-  // is dated after `now`, which every helper below reads as the future, and
-  // the tap it took to save moves nothing but the history list. See useNow.
-  const now = useNow(logs[0]?.loggedAt);
+  const now = useNow();
 
   const trend = useMemo(() => summarise(logs, now), [logs, now]);
   const series = useMemo(() => chartSeries(logs, now), [logs, now]);
