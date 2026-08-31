@@ -2,13 +2,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { useNow } from "@/lib/clock";
+import { CLOCK_TICK_MS } from "@/lib/trend";
 
-const TICK_MS = 60_000;
 const BASE = Date.parse("2026-03-10T12:00:00.000Z");
-
-function iso(at: number): string {
-  return new Date(at).toISOString();
-}
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -26,31 +22,29 @@ describe("useNow", () => {
     expect(result.current).toBe(BASE);
 
     act(() => {
-      vi.advanceTimersByTime(TICK_MS);
+      vi.advanceTimersByTime(CLOCK_TICK_MS);
     });
-    expect(result.current).toBe(BASE + TICK_MS);
+    expect(result.current).toBe(BASE + CLOCK_TICK_MS);
   });
 
-  it("covers a log written between two ticks", () => {
-    // What this is for: every window helper in trend.ts drops logs dated
-    // after `now`, so a score saved twenty seconds after the last tick read
-    // as being in the future to all of them. The history list showed it and
-    // the chart, the week count, the mean and the streak did not move until
-    // the minute was up.
-    const { result } = renderHook(() => useNow(iso(BASE + 20_000)));
-    expect(result.current).toBe(BASE + 20_000);
+  it("catches up on being brought back to the foreground", () => {
+    // Timers are throttled or stopped outright while the app is backgrounded,
+    // so the interval alone would leave a pocketed phone reading last night's
+    // time until a whole tick had run in the foreground.
+    const { result } = renderHook(() => useNow());
+
+    act(() => {
+      vi.setSystemTime(BASE + 5 * 60 * 60 * 1000);
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(result.current).toBe(BASE + 5 * 60 * 60 * 1000);
   });
 
-  it("will not run further ahead of itself than it can be wrong", () => {
-    // A device whose clock ran ahead, or a record imported from one that
-    // did. Covering that would push every window into the future, which is
-    // the whole reason those helpers drop future-dated logs.
-    const { result } = renderHook(() => useNow(iso(BASE + 24 * 60 * 60 * 1000)));
-    expect(result.current).toBe(BASE + TICK_MS);
-  });
-
-  it("ignores a timestamp already in the past, or one it cannot read", () => {
-    expect(renderHook(() => useNow(iso(BASE - 5_000))).result.current).toBe(BASE);
-    expect(renderHook(() => useNow("the other day")).result.current).toBe(BASE);
+  it("never runs ahead of the wall clock", () => {
+    // The reading is only ever a past Date.now(). What covers a log written
+    // since the last step is the tolerance in trend.ts, not a clock pulled
+    // forward to meet it - see the hasHappened cases there.
+    const { result } = renderHook(() => useNow());
+    expect(result.current).toBeLessThanOrEqual(Date.now());
   });
 });

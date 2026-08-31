@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   chartSeries,
+  CLOCK_TICK_MS,
   regularity,
   standings,
   summarise,
@@ -12,6 +13,10 @@ import type { Dog, PoopLog } from "@/lib/types";
 
 const NOW = Date.parse("2026-03-10T12:00:00.000Z");
 const DAY = 24 * 60 * 60 * 1000;
+
+function iso(at: number): string {
+  return new Date(at).toISOString();
+}
 
 function log(daysAgo: number, score: PoopLog["score"]): PoopLog {
   return {
@@ -146,6 +151,35 @@ describe("chartSeries", () => {
   });
 });
 
+describe("the clock's own lag", () => {
+  // useNow steps once a minute, so a score saved between steps is dated after
+  // the `now` every helper here measures against. Read as a future record -
+  // which is what these guards do to a device whose clock genuinely ran ahead
+  // - the save moved nothing but the history list: not the chart, not the week
+  // count, not the mean, not the streak.
+  const fresh: PoopLog = { ...log(0, 2), id: "fresh", loggedAt: iso(NOW + 20_000) };
+  const skewed: PoopLog = { ...log(0, 2), id: "skewed", loggedAt: iso(NOW + 2 * CLOCK_TICK_MS) };
+
+  it("counts a log written since the last step, and nothing further ahead", () => {
+    expect(summarise([fresh], NOW).lastWeek).toBe(1);
+    expect(summarise([skewed], NOW).lastWeek).toBe(0);
+  });
+
+  it("plots that log at the right-hand edge rather than past it", () => {
+    const { points } = chartSeries([fresh], NOW);
+    expect(points).toHaveLength(1);
+    // Not merely close to 1: a point past the edge is drawn outside the plot
+    // and to the right of the last gridline's label.
+    expect(points[0].x).toBe(1);
+    expect(chartSeries([skewed], NOW).points).toEqual([]);
+  });
+
+  it("keeps that log in the report window", () => {
+    expect(withinDays([fresh], 30, NOW).map((entry) => entry.id)).toEqual(["fresh"]);
+    expect(withinDays([skewed], 30, NOW)).toEqual([]);
+  });
+});
+
 /**
  * Streaks and standings are counted in local calendar days, so these build
  * their timestamps with setDate/setHours from a fixed local noon rather than
@@ -196,6 +230,20 @@ describe("regularity", () => {
 
   it("is zero once the run is two days stale", () => {
     expect(regularity([localLog("a", 2, 2), localLog("b", 3, 2)], NOW_LOCAL)).toBe(0);
+  });
+
+  it("keeps the streak for a log saved just after midnight", () => {
+    // 23:59:50 by a clock that steps once a minute, and a log fifteen seconds
+    // later: it belongs to a day `now` has not reached yet. Dropped as
+    // future-dated, the streak read zero on the screen that had just recorded
+    // it, until the clock caught up a moment later.
+    const midnight = new Date(LOCAL_NOON);
+    midnight.setHours(24, 0, 0, 0);
+    const fresh: PoopLog = {
+      ...localLog("fresh", 0, 2),
+      loggedAt: new Date(midnight.getTime() + 15_000).toISOString(),
+    };
+    expect(regularity([fresh, localLog("today", 0, 2)], midnight.getTime() - 10_000)).toBe(2);
   });
 
   it("ignores scores entirely - it counts logging, not quality", () => {

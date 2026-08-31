@@ -1,5 +1,6 @@
 import { downloadFile, localDateStamp } from "@/lib/download";
 import { scoreInfo } from "@/lib/purina";
+import { compareTime } from "@/lib/trend";
 import type { Dog, PoopLog, Store } from "@/lib/types";
 
 const COLUMNS = [
@@ -36,7 +37,7 @@ export function buildCsv(store: Store, dogs: readonly Dog[] = store.dogs): strin
   // nothing shared. toSorted would need Safari 16.4; the floor here is 16.0.
   const logs: PoopLog[] = store.logs
     .filter((log) => names.has(log.dogId))
-    .sort((a, b) => a.loggedAt.localeCompare(b.loggedAt));
+    .sort((a, b) => compareTime(a.loggedAt, b.loggedAt));
 
   const rows: string[][] = [
     [...COLUMNS],

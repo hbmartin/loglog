@@ -109,12 +109,21 @@ function assetUrls(files: readonly string[], dir: string): string[] {
       .filter(
         (segments) => segments[0] === "assets" && !FONT_FILE.test(segments[segments.length - 1]),
       )
-      // Encoded per segment rather than joined raw: Vite keeps the source
-      // basename for many imported assets, and a space, "#", "?" or "%" in one
-      // resolves to a different path - or to a truncated one - by the time the
-      // worker hands it to fetch, so the entry never matches what the page asks
-      // for. Encoding also matches what the bundler writes into index.html.
-      .map((segments) => `/${segments.map(encodeURIComponent).join("/")}`)
+      // Encoded exactly as Vite encodes it, because the only thing that
+      // matters here is that the key the worker caches under is the URL the
+      // page requests, character for character: anything else and
+      // caches.match misses and the asset is simply unavailable on the first
+      // offline load after a deploy, silently.
+      //
+      // Vite keeps the source basename for many imported assets and writes
+      // their URLs through encodeURIPath, which is encodeURI over the path.
+      // encodeURIComponent is the stricter escape and so the wrong one - it
+      // also escapes "@", ",", ";", ":", "=", "+", "$" and "&", none of which
+      // sanitizeFileName strips, so "logo@2x-hash.png" would be pre-cached as
+      // "logo%402x-hash.png" and requested as itself. A "#" or "?" in a
+      // filename is broken either way, in the bundler's output as much as
+      // here, and matching it is still the right answer.
+      .map((segments) => encodeURI(`/${segments.join("/")}`))
   );
 }
 
@@ -148,6 +157,15 @@ function serviceWorkerVersion(): Plugin {
       consequence:
         "Without it the worker pre-caches nothing, and the first offline load after a deploy has a shell with no code behind it.",
       value: (files, dir) => JSON.stringify(assetUrls(files, dir)),
+    },
+    // The list above is named once, inside the branch this guard selects, so
+    // that the substitution writes it into dist/sw.js once. Guarding on
+    // `typeof __BUILD_ASSETS__` instead stamped every URL twice, into a file
+    // _headers marks no-cache.
+    __BUILD_STAMPED__: {
+      consequence:
+        "Without it the worker takes its unstamped branch and pre-caches no assets at all, whatever __BUILD_ASSETS__ holds.",
+      value: () => "true",
     },
   };
   let outDir = "dist";

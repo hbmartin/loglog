@@ -50,19 +50,8 @@ function DogListPage() {
   // The standings are a rolling week, so they are measured from `now` rather
   // than from the Date.now() default inside standings: memoised on the data
   // alone, that default freezes at whatever moment the store last changed and
-  // the week stops rolling. The newest entry across the pack goes with it so
-  // that a log another tab wrote between ticks is not read as being in the
-  // future and left out of the table. See useNow.
-  const newestAt = useMemo(() => {
-    let newest: string | undefined;
-    for (const log of latest.values()) {
-      if (newest === undefined || log.loggedAt.localeCompare(newest) > 0) {
-        newest = log.loggedAt;
-      }
-    }
-    return newest;
-  }, [latest]);
-  const now = useNow(newestAt);
+  // the week stops rolling.
+  const now = useNow();
 
   const table = useMemo(() => standings(dogs, byDog, now), [dogs, byDog, now]);
 

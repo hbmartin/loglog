@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
-
-/** Matches the finest granularity anything on screen renders: "3m ago". */
-const TICK_MS = 60_000;
+import { CLOCK_TICK_MS } from "@/lib/trend";
 
 /**
  * A clock the render can depend on.
@@ -18,27 +16,20 @@ const TICK_MS = 60_000;
  * timers are throttled or stopped outright while the app is backgrounded, so
  * coming back to it hours later must not wait out an interval first.
  *
- * `latest` is the newest timestamp the caller is about to measure windows
- * against, and it exists because this clock steps rather than runs: between
- * ticks it lags real time by up to a minute. Every helper in trend.ts drops
- * logs dated after `now`, so a score tapped twenty seconds after the last
- * tick is filtered straight back out of the chart, the week count, the mean
- * and the streak - the history list shows it, and every other reading on the
- * screen sits unchanged until the tick lands. The app's primary action
- * appears not to register. Passing the newest entry pulls the clock forward
- * to cover it.
- *
- * By one tick at most, though. That is the whole of this clock's own error,
- * and past it the future-dated logs those guards exist for - a device whose
- * clock ran ahead, a record imported from one that had - have to stay out of
- * the window.
+ * This steps rather than runs, so between steps it lags real time by up to
+ * CLOCK_TICK_MS and a log written in that gap is dated after the reading it is
+ * measured against. That is handled once, in the helpers doing the measuring -
+ * see hasHappened - rather than here: a clock told which log to cover would
+ * only be as correct as the newest timestamp each screen remembered to hand
+ * it, and the next screen to measure a window would quietly reintroduce the
+ * bug by not handing it one.
  */
-export function useNow(latest?: string): number {
+export function useNow(): number {
   const [tick, setTick] = useState(() => Date.now());
 
   useEffect(() => {
     const advance = () => setTick(Date.now());
-    const timer = window.setInterval(advance, TICK_MS);
+    const timer = window.setInterval(advance, CLOCK_TICK_MS);
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
         advance();
@@ -52,9 +43,5 @@ export function useNow(latest?: string): number {
     };
   }, []);
 
-  if (latest === undefined) {
-    return tick;
-  }
-  const at = Date.parse(latest);
-  return Number.isNaN(at) || at <= tick ? tick : Math.min(at, tick + TICK_MS);
+  return tick;
 }

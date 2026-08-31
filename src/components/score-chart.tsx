@@ -41,18 +41,30 @@ const MIN_HIT_X = MIN_HIT_WIDTH / PLOT_WIDTH;
  * reached. Slices tile the plot instead: they never overlap and they leave no
  * dead space.
  *
- * Points closer together than MIN_HIT_X are handled as a run that divides one
- * slice evenly, rather than one at a time. Their own midpoints would give an
- * interior member a slice as wide as the gap to its neighbours - for two logs
- * an hour apart on a thirty-day window, half a CSS pixel, which is a <rect>
- * no pointer can land on and the unreachable middle dot this replaced, back
- * again. A run redistributes: three logs across one afternoon each get a
- * third of the afternoon's slice. Dividing evenly can only raise the
- * narrowest band, never lower it, because the run's total width is the same
- * either way.
+ * Consecutive points closer together than MIN_HIT_X are handled as a run
+ * sharing one slice, rather than one at a time. Their own midpoints would give
+ * an interior member a slice as wide as the gap to its neighbours - for two
+ * logs an hour apart on a thirty-day window, half a CSS pixel, which is a
+ * <rect> no pointer can land on and the unreachable middle dot this replaced,
+ * back again. Membership is measured from the previous member rather than from
+ * whichever point opened the run, so it is the gaps that decide, and a point
+ * left out of one keeps a slice of at least MIN_HIT_WIDTH: it is half a gap
+ * from each neighbour, and both gaps are full width.
+ *
+ * What the run divides is a window only as wide as it needs - MIN_HIT_X per
+ * member - laid over the run itself, with the slack on either side left to the
+ * outermost members. Dividing the whole slice evenly instead puts the
+ * boundaries wherever the neighbours outside happen to be: two logs a day
+ * apart with a clear month behind them would split the plot down the middle,
+ * and both dots would sit in the right-hand half, so the older one could only
+ * be selected by tapping empty plot at the far left. That is the unreachable
+ * dot again, by a longer route.
  *
  * It cannot promise MIN_HIT_WIDTH outright - thirty points on a thirty-day
- * window leave under 10 units each however they are cut - only that no point
+ * window leave under 10 units each however they are cut - nor that a dot in a
+ * tight cluster falls inside its own band, which for three logs in one
+ * afternoon is not geometrically possible. What it does promise is that the
+ * bands are in plot order, adjacent to the dots they select, and none of them
  * is squeezed while a neighbour keeps a slice a hundred times wider.
  */
 function hitBands(points: readonly ChartPoint[]): { id: string; x: number; width: number }[] {
@@ -60,7 +72,7 @@ function hitBands(points: readonly ChartPoint[]): { id: string; x: number; width
 
   for (let start = 0; start < points.length;) {
     let end = start + 1;
-    while (end < points.length && points[end].x - points[start].x < MIN_HIT_X) {
+    while (end < points.length && points[end].x - points[end - 1].x < MIN_HIT_X) {
       end += 1;
     }
 
@@ -72,11 +84,29 @@ function hitBands(points: readonly ChartPoint[]): { id: string; x: number; width
     const next = points[end];
     const left = previous === undefined ? 0 : (previous.x + points[start].x) / 2;
     const right = next === undefined ? 1 : (points[end - 1].x + next.x) / 2;
-    const step = (right - left) / (end - start);
+
+    // Consecutive members are less than MIN_HIT_X apart, so the run's own
+    // extent is always narrower than the window being divided, and the window
+    // always sits over it. Where the slice is too narrow to give everyone
+    // MIN_HIT_X, the window is the whole slice and every member takes an equal
+    // share of it, which is the widest the narrowest band can be.
+    const count = end - start;
+    const divided = Math.min(count * MIN_HIT_X, right - left);
+    const centre = (points[start].x + points[end - 1].x) / 2;
+    const from = Math.min(Math.max(centre - divided / 2, left), right - divided);
+    const step = divided / count;
 
     for (let index = start; index < end; index += 1) {
-      const from = left + (index - start) * step;
-      bands.push({ id: points[index].id, x: toX(from), width: toX(from + step) - toX(from) });
+      const offset = index - start;
+      // The outermost members absorb the slack out to the neighbours, which
+      // keeps the bands tiling edge to edge.
+      const bandLeft = offset === 0 ? left : from + offset * step;
+      const bandRight = offset === count - 1 ? right : from + (offset + 1) * step;
+      bands.push({
+        id: points[index].id,
+        x: toX(bandLeft),
+        width: toX(bandRight) - toX(bandLeft),
+      });
     }
     start = end;
   }

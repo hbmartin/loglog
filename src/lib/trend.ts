@@ -7,6 +7,52 @@ const WEEK_MS = 7 * DAY_MS;
 /** Gridlines on the trend chart, including both ends of the window. */
 const TICK_COUNT = 5;
 
+/**
+ * How often the clock behind `now` steps, and so how far ahead of it a
+ * timestamp may sit and still count as having happened.
+ *
+ * useNow steps rather than runs - a render cannot call Date.now() and stay
+ * pure - so between steps it lags real time by up to this long. Without the
+ * tolerance, a score saved twenty seconds after the last step is dated after
+ * `now`, every window below reads that as the future and drops it, and the
+ * history list shows the entry while the chart, the week count, the mean and
+ * the streak all sit unchanged until the minute is up: the app's primary
+ * action appears not to register.
+ *
+ * A minute is also the whole of that clock's error, so it is the whole of what
+ * gets forgiven. Past it are the records these guards exist for - a device
+ * whose clock ran ahead, or a log imported from one that had - and those stay
+ * out of every window.
+ *
+ * Here rather than in clock.ts because this module is the one that has to
+ * agree with it, and because clock.ts is the React half: a pure helper must
+ * not have to import a hook to learn its own tolerance.
+ */
+export const CLOCK_TICK_MS = 60_000;
+
+/**
+ * True when `at` has happened as far as a clock stepping once a minute can
+ * tell, and is a time at all. Every window in this module is measured through
+ * it, so a fresh log is either inside all of them or outside all of them.
+ */
+export function hasHappened(at: number, now: number): boolean {
+  return !Number.isNaN(at) && at <= now + CLOCK_TICK_MS;
+}
+
+/**
+ * Chronological order for two ISO-8601 timestamps, oldest first.
+ *
+ * Parsed rather than compared as text. The stored shape is whatever
+ * `z.iso.datetime()` accepts, which leaves the fractional part optional, and
+ * for two strings of different precision neither string order nor a locale
+ * collation is chronological: "T12:00:00Z" sorts after "T12:00:00.500Z" under
+ * both, because "Z" outranks ".", while it is the earlier instant of the two.
+ * An imported record is where that arrives.
+ */
+export function compareTime(a: string, b: string): number {
+  return Date.parse(a) - Date.parse(b);
+}
+
 export type Trend = {
   total: number;
   lastWeek: number;
@@ -17,8 +63,8 @@ export type Trend = {
 
 export function summarise(logs: readonly PoopLog[], now = Date.now()): Trend {
   const recent = logs.filter((log) => {
-    const elapsed = now - new Date(log.loggedAt).getTime();
-    return elapsed >= 0 && elapsed <= WEEK_MS;
+    const at = new Date(log.loggedAt).getTime();
+    return hasHappened(at, now) && now - at <= WEEK_MS;
   });
   const average =
     recent.length === 0 ? null : recent.reduce((sum, log) => sum + log.score, 0) / recent.length;
@@ -74,13 +120,16 @@ export function chartSeries(logs: readonly PoopLog[], now = Date.now(), days = 3
   const points = logs
     .flatMap((log) => {
       const at = new Date(log.loggedAt).getTime();
-      if (Number.isNaN(at) || at < start || at > now) {
+      if (!hasHappened(at, now) || at < start) {
         return [];
       }
       return [
         {
           id: log.id,
-          x: (at - start) / span,
+          // Clamped, because a log written since the clock last stepped is
+          // dated fractionally after `now`: a point past x = 1 is drawn
+          // outside the plot and to the right of the last gridline's label.
+          x: Math.min((at - start) / span, 1),
           y: scoreToY(log.score),
           score: log.score,
           loggedAt: log.loggedAt,
@@ -145,13 +194,12 @@ export function dayKey(date: Date): string {
   return `${date.getFullYear()}-${month}-${day}`;
 }
 
-/** The local days that have at least one usable, non-future log. */
+/** The local days that have at least one log that has happened. */
 export function loggedDays(logs: readonly PoopLog[], now = Date.now()): Set<string> {
   const days = new Set<string>();
   for (const log of logs) {
     const at = new Date(log.loggedAt);
-    const time = at.getTime();
-    if (!Number.isNaN(time) && time <= now) {
+    if (hasHappened(at.getTime(), now)) {
       days.add(dayKey(at));
     }
   }
@@ -171,7 +219,15 @@ export function regularity(logs: readonly PoopLog[], now = Date.now()): number {
     return 0;
   }
 
+  // Tomorrow is tried first, and only ever matches in the minute after
+  // midnight: a log saved at 00:00:15 is dated on a day `now` has not reached
+  // yet, and loggedDays keeps it for the same reason. Without this, the screen
+  // that had just recorded something would blank the streak until the clock
+  // caught up.
   const cursor = new Date(now);
+  if (days.has(dayKey(new Date(now + CLOCK_TICK_MS)))) {
+    cursor.setTime(now + CLOCK_TICK_MS);
+  }
   if (!days.has(dayKey(cursor))) {
     cursor.setDate(cursor.getDate() - 1);
     if (!days.has(dayKey(cursor))) {
@@ -238,8 +294,8 @@ export function standings(
   return dogs
     .flatMap((dog) => {
       const recent = (byDog.get(dog.id) ?? []).filter((log) => {
-        const elapsed = now - new Date(log.loggedAt).getTime();
-        return elapsed >= 0 && elapsed <= WEEK_MS;
+        const at = new Date(log.loggedAt).getTime();
+        return hasHappened(at, now) && now - at <= WEEK_MS;
       });
       if (recent.length === 0) {
         return [];
@@ -260,14 +316,14 @@ export function standings(
 
 /**
  * Logs from the last `days`, newest first, dropping anything unparseable or
- * dated in the future. `now` is a parameter rather than a call inside a
- * component so the report screen can memoise this without doing impure work
- * during render.
+ * dated in a future hasHappened will not forgive. `now` is a parameter rather
+ * than a call inside a component so the report screen can memoise this without
+ * doing impure work during render.
  */
 export function withinDays(logs: readonly PoopLog[], days: number, now = Date.now()): PoopLog[] {
   const cutoff = now - days * DAY_MS;
   return logs.filter((log) => {
     const at = new Date(log.loggedAt).getTime();
-    return !Number.isNaN(at) && at >= cutoff && at <= now;
+    return hasHappened(at, now) && at >= cutoff;
   });
 }
