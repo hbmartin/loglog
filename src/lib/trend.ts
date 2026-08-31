@@ -8,35 +8,18 @@ const WEEK_MS = 7 * DAY_MS;
 const TICK_COUNT = 5;
 
 /**
- * How often the clock behind `now` steps, and so how far ahead of it a
- * timestamp may sit and still count as having happened.
+ * True when `at` is a time at all and has already happened. Every window in
+ * this module is measured through it, so a log is either inside all of them or
+ * outside all of them.
  *
- * useNow steps rather than runs - a render cannot call Date.now() and stay
- * pure - so between steps it lags real time by up to this long. Without the
- * tolerance, a score saved twenty seconds after the last step is dated after
- * `now`, every window below reads that as the future and drops it, and the
- * history list shows the entry while the chart, the week count, the mean and
- * the streak all sit unchanged until the minute is up: the app's primary
- * action appears not to register.
- *
- * A minute is also the whole of that clock's error, so it is the whole of what
- * gets forgiven. Past it are the records these guards exist for - a device
- * whose clock ran ahead, or a log imported from one that had - and those stay
- * out of every window.
- *
- * Here rather than in clock.ts because this module is the one that has to
- * agree with it, and because clock.ts is the React half: a pure helper must
- * not have to import a hook to learn its own tolerance.
- */
-export const CLOCK_TICK_MS = 60_000;
-
-/**
- * True when `at` has happened as far as a clock stepping once a minute can
- * tell, and is a time at all. Every window in this module is measured through
- * it, so a fresh log is either inside all of them or outside all of them.
+ * The comparison is exact, with no allowance for a `now` that lags. It does
+ * not need one: a reading is either taken directly, as the report screen takes
+ * it, or comes from useNow, whose contract is that it is never behind the
+ * store - see clock.ts. What that leaves outside is what this guard exists
+ * for, a device whose clock ran ahead or a log imported from one that had.
  */
 export function hasHappened(at: number, now: number): boolean {
-  return !Number.isNaN(at) && at <= now + CLOCK_TICK_MS;
+  return !Number.isNaN(at) && at <= now;
 }
 
 /**
@@ -50,10 +33,26 @@ export function hasHappened(at: number, now: number): boolean {
  * An imported record is where that arrives.
  */
 export function compareTime(a: string, b: string): number {
-  return Date.parse(a) - Date.parse(b);
+  const left = Date.parse(a);
+  const right = Date.parse(b);
+  // A timestamp that will not parse sorts oldest rather than returning NaN.
+  // Sort coerces NaN to 0, which makes the entry compare equal to every other
+  // one at once: the order is then not transitive, the engine leaves the entry
+  // wherever the merge happened to put it - logsForDog index 0 included, which
+  // is the log the dog page reads as the latest - and newestLog, which ranks
+  // deterministically, disagrees. Oldest is the answer that keeps the two the
+  // same, and it is the honest place for a record whose date is unreadable.
+  if (Number.isNaN(left)) {
+    return Number.isNaN(right) ? 0 : -1;
+  }
+  if (Number.isNaN(right)) {
+    return 1;
+  }
+  return left - right;
 }
 
 export type Trend = {
+  /** Logs that have happened; one dated in the future is not among them. */
   total: number;
   lastWeek: number;
   /** Mean score over the last week, or null when nothing was logged. */
@@ -62,15 +61,29 @@ export type Trend = {
 };
 
 export function summarise(logs: readonly PoopLog[], now = Date.now()): Trend {
-  const recent = logs.filter((log) => {
+  // One pass, and one parse per log. `total` is counted through the same guard
+  // as every field beside it: a log dated 2030 that raised the total while the
+  // week count, the mean, the streak and the chart all dropped it left the
+  // screen claiming a history it then refused to describe - "Last: just now",
+  // no mean, no streak, an empty chart and every milestone locked.
+  const recent: PoopLog[] = [];
+  let total = 0;
+  for (const log of logs) {
     const at = new Date(log.loggedAt).getTime();
-    return hasHappened(at, now) && now - at <= WEEK_MS;
-  });
+    if (!hasHappened(at, now)) {
+      continue;
+    }
+    total += 1;
+    if (now - at <= WEEK_MS) {
+      recent.push(log);
+    }
+  }
+
   const average =
     recent.length === 0 ? null : recent.reduce((sum, log) => sum + log.score, 0) / recent.length;
 
   return {
-    total: logs.length,
+    total,
     lastWeek: recent.length,
     average,
     offIdeal: recent.filter((log) => !scoreInfo(log.score).ideal).length,
@@ -126,10 +139,10 @@ export function chartSeries(logs: readonly PoopLog[], now = Date.now(), days = 3
       return [
         {
           id: log.id,
-          // Clamped, because a log written since the clock last stepped is
-          // dated fractionally after `now`: a point past x = 1 is drawn
+          // hasHappened above puts `at` at or before `now`, so this cannot
+          // exceed 1 and needs no clamp: a point past x = 1 would be drawn
           // outside the plot and to the right of the last gridline's label.
-          x: Math.min((at - start) / span, 1),
+          x: (at - start) / span,
           y: scoreToY(log.score),
           score: log.score,
           loggedAt: log.loggedAt,
@@ -219,15 +232,10 @@ export function regularity(logs: readonly PoopLog[], now = Date.now()): number {
     return 0;
   }
 
-  // Tomorrow is tried first, and only ever matches in the minute after
-  // midnight: a log saved at 00:00:15 is dated on a day `now` has not reached
-  // yet, and loggedDays keeps it for the same reason. Without this, the screen
-  // that had just recorded something would blank the streak until the clock
-  // caught up.
+  // No probe of tomorrow here. A log saved at 00:00:15 is on a day a stepping
+  // clock may not have reached yet, but useNow steps on the write that saved
+  // it, so `now` is on that day by the time this runs - see clock.ts.
   const cursor = new Date(now);
-  if (days.has(dayKey(new Date(now + CLOCK_TICK_MS)))) {
-    cursor.setTime(now + CLOCK_TICK_MS);
-  }
   if (!days.has(dayKey(cursor))) {
     cursor.setDate(cursor.getDate() - 1);
     if (!days.has(dayKey(cursor))) {

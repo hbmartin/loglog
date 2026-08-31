@@ -100,7 +100,13 @@ function mutate(update: (current: Store) => Store): void {
   write(update(current));
 }
 
-function subscribe(listener: () => void): () => void {
+/**
+ * Run `listener` on every write to the store, this tab's and another tab's
+ * both. Exported because useStore is not the only thing that has to hear one:
+ * useNow steps its reading on a write too, which is what keeps the clock ahead
+ * of every record the store holds - see clock.ts.
+ */
+export function subscribeToStore(listener: () => void): () => void {
   listeners.add(listener);
 
   // Another tab wrote to the same key: drop the cache and re-render.
@@ -123,7 +129,7 @@ function subscribe(listener: () => void): () => void {
 }
 
 export function useStore(): Store {
-  return useSyncExternalStore(subscribe, read, () => EMPTY_STORE);
+  return useSyncExternalStore(subscribeToStore, read, () => EMPTY_STORE);
 }
 
 function newId(): string {
@@ -204,9 +210,7 @@ export function logsByDog(store: Store): Map<string, PoopLog[]> {
 }
 
 /**
- * The most recent entry, or undefined for a dog with nothing logged - or
- * nothing datable, since a timestamp that will not parse cannot be the newest
- * of anything.
+ * The most recent entry, or undefined for a dog with nothing logged.
  *
  * Ties keep the earlier one in store order, which is what logsForDog's stable
  * sort does too - the two must not disagree about which log is "latest".
@@ -217,10 +221,19 @@ export function logsByDog(store: Store): Map<string, PoopLog[]> {
  */
 export function newestLog(logs: readonly PoopLog[] | undefined): PoopLog | undefined {
   let newest: PoopLog | undefined;
-  // An unparseable timestamp compares false against this and so can never win.
+  // A datable timestamp always beats this, so an undatable one can only ever
+  // win by default.
   let newestAt = Number.NEGATIVE_INFINITY;
   for (const log of logs ?? []) {
     const at = Date.parse(log.loggedAt);
+    if (Number.isNaN(at)) {
+      // Sorted oldest by compareTime, so this is the newest of nothing but a
+      // history with no datable entry in it at all. Returning it anyway is
+      // what keeps the two agreeing, and what keeps the list screen from
+      // telling somebody with a record on file that they have logged nothing.
+      newest ??= log;
+      continue;
+    }
     if (at > newestAt) {
       newest = log;
       newestAt = at;

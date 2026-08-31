@@ -1,6 +1,6 @@
 import { scoreInfo } from "@/lib/purina";
 import { DAWN_HOUR, dayKey, hasHappened } from "@/lib/trend";
-import { POOP_COLORS, type PoopLog } from "@/lib/types";
+import { POOP_COLORS, type PoopColor, type PoopLog } from "@/lib/types";
 
 /**
  * Milestones derived from the record, plus one from the meta store.
@@ -34,21 +34,40 @@ function isNextDay(day: string, next: string): boolean {
 }
 
 /**
+ * A log with its timestamp already parsed, so that the milestones below - each
+ * of which needs the day, the hour or neither - can share one Date per log
+ * rather than building their own. This runs on every render of the dog page
+ * whose deps include `now`, which is once a minute plus once per write.
+ */
+type Dated = { log: PoopLog; at: Date };
+
+/**
+ * The logs that have happened, in the order given.
+ *
+ * Days that have not happened yet are dropped, the same way loggedDays and
+ * chartSeries drop them: a device whose clock ran ahead, or a record edited
+ * by hand, should not be able to extend a streak into tomorrow or unlock a
+ * milestone today. Unparseable entries go the same way, which is why nothing
+ * downstream has to check for one.
+ */
+function dated(logs: readonly PoopLog[], now: number): Dated[] {
+  return logs.flatMap((log) => {
+    const at = new Date(log.loggedAt);
+    return hasHappened(at.getTime(), now) ? [{ log, at }] : [];
+  });
+}
+
+/**
  * The longest run of consecutive days on which everything logged was ideal.
  * A day with no logs at all breaks the run rather than extending it - the
  * streak is for keeping a dog in the band, not for looking away.
  *
- * Days that have not happened yet are dropped, the same way loggedDays and
- * chartSeries drop them: a device whose clock ran ahead, or a record edited
- * by hand, should not be able to extend a streak into tomorrow.
+ * Takes entries already filtered by `dated`, so it neither re-guards nor
+ * re-parses what its one non-test caller has just done.
  */
-export function longestIdealRun(logs: readonly PoopLog[], now = Date.now()): number {
+function longestRun(entries: readonly Dated[]): number {
   const spotless = new Map<string, boolean>();
-  for (const log of logs) {
-    const at = new Date(log.loggedAt);
-    if (!hasHappened(at.getTime(), now)) {
-      continue;
-    }
+  for (const { log, at } of entries) {
     const key = dayKey(at);
     spotless.set(key, (spotless.get(key) ?? true) && scoreInfo(log.score).ideal);
   }
@@ -72,13 +91,14 @@ export function longestIdealRun(logs: readonly PoopLog[], now = Date.now()): num
   return best;
 }
 
+/** The same run, for callers holding raw logs - the yearly summary and tests. */
+export function longestIdealRun(logs: readonly PoopLog[], now = Date.now()): number {
+  return longestRun(dated(logs, now));
+}
+
 /** Shared shape for "N of M done", with the bar never overrunning its goal. */
 function earned(current: number, goal: number) {
   return { earned: current >= goal, progress: { current: Math.min(current, goal), goal } };
-}
-
-function has(logs: readonly PoopLog[], predicate: (log: PoopLog) => boolean): number {
-  return logs.filter(predicate).length;
 }
 
 export function achievements(
@@ -88,18 +108,33 @@ export function achievements(
 ): Achievement[] {
   // Every milestone is scored on this rather than on `logs`, not just the
   // streak. A record carrying a log dated 2030 - clock skew, or an edited
-  // store, which is exactly what the guard inside longestIdealRun exists for -
-  // would otherwise unlock Code Brown, The Namesake, Dawn Patrol, Full
+  // store - would otherwise unlock Code Brown, The Namesake, Dawn Patrol, Full
   // Spectrum and Century today, on the strength of something that has not
-  // happened. Unparseable entries go the same way, which is why the hour below
-  // no longer has to check for one.
-  const happened = logs.filter((log) => hasHappened(new Date(log.loggedAt).getTime(), now));
+  // happened.
+  const happened = dated(logs, now);
 
-  const idealRun = longestIdealRun(happened, now);
-  const namesakes = has(happened, (log) => log.score === 3);
-  const codeBrowns = has(happened, (log) => log.score === 7);
-  const dawns = has(happened, (log) => new Date(log.loggedAt).getHours() < DAWN_HOUR);
-  const colors = new Set(happened.flatMap((log) => (log.color === null ? [] : [log.color])));
+  // Folded in one pass. A filter per counter walked the list four times over,
+  // and two of them built a second Date for a timestamp `dated` has already
+  // parsed.
+  const idealRun = longestRun(happened);
+  let namesakes = 0;
+  let codeBrowns = 0;
+  let dawns = 0;
+  const colors = new Set<PoopColor>();
+  for (const { log, at } of happened) {
+    if (log.score === 3) {
+      namesakes += 1;
+    }
+    if (log.score === 7) {
+      codeBrowns += 1;
+    }
+    if (at.getHours() < DAWN_HOUR) {
+      dawns += 1;
+    }
+    if (log.color !== null) {
+      colors.add(log.color);
+    }
+  }
 
   return [
     {

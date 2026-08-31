@@ -46,12 +46,24 @@ function dotXs(container: HTMLElement): number[] {
   return drawn.split(" ").map((pair) => Number(pair.split(",")[0]));
 }
 
-/** The index of the slice a tap at user-space `x` lands in, or -1. */
+/**
+ * The index of the slice a tap at user-space `x` lands in, or -1.
+ *
+ * Scanned from the end, which is how the browser resolves it: the slices tile
+ * edge to edge, so a tap exactly on a shared boundary is inside two rects at
+ * once and the one painted later - drawn in plot order, so the higher index -
+ * takes the hit. Scanning forwards would score such a tap as selecting the
+ * older log while the app selects the newer, and the cases below would pass on
+ * geometry the product gets wrong.
+ */
 function bandAt(targets: readonly SVGRectElement[], x: number): number {
-  return targets.findIndex((rect) => {
-    const left = Number(rect.getAttribute("x"));
-    return x >= left && x <= left + Number(rect.getAttribute("width"));
-  });
+  for (let index = targets.length - 1; index >= 0; index -= 1) {
+    const left = Number(targets[index].getAttribute("x"));
+    if (x >= left && x <= left + Number(targets[index].getAttribute("width"))) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 describe("ScoreChart", () => {
@@ -92,6 +104,47 @@ describe("ScoreChart", () => {
 
     fireEvent.click(targets[bandAt(targets, dotXs(container)[0])]);
     expect(caption(container)).toContain("Firm, segmented");
+  });
+
+  it("keeps every dot in its own slice for a run of daily logs", () => {
+    // A day is a shade under MIN_HIT_X on a thirty-day plot, so consecutive
+    // days are one run - and a run ending today sits hard against the plot's
+    // right edge. Clamping the divided window inside the run's slice there
+    // shifted every boundary a step to the left: each dot landed in its
+    // neighbour's band, so tapping yesterday selected today, and the oldest of
+    // the four could only be reached by tapping the empty left-hand four
+    // fifths of the plot. This is the app's ordinary state, not an edge case.
+    const { container } = render(
+      draw([log("d3", 3 * DAY, 2), log("d2", 2 * DAY, 3), log("d1", DAY, 6), log("today", 0, 7)]),
+    );
+    const targets = hitTargets(container);
+    expect(targets).toHaveLength(4);
+
+    dotXs(container).forEach((x, index) => {
+      expect(bandAt(targets, x)).toBe(index);
+    });
+
+    fireEvent.click(targets[0]);
+    expect(caption(container)).toContain("Firm, segmented");
+  });
+
+  it("keeps every dot in its own slice at the oldest edge too", () => {
+    // The same run against the other end of the window, where the clamp ran
+    // the other way and put the two oldest dots in one band.
+    const { container } = render(
+      draw([
+        log("a", 30 * DAY, 2),
+        log("b", 29 * DAY, 3),
+        log("c", 28 * DAY, 6),
+        log("later", 10 * DAY, 7),
+      ]),
+    );
+    const targets = hitTargets(container);
+    expect(targets).toHaveLength(4);
+
+    dotXs(container).forEach((x, index) => {
+      expect(bandAt(targets, x)).toBe(index);
+    });
   });
 
   it("tiles the hit targets edge to edge without overlapping", () => {
@@ -156,11 +209,14 @@ describe("ScoreChart", () => {
 
     // And the afternoon's three slices sit over the afternoon rather than
     // spreading across the plot: a tap anywhere on the cluster lands in one of
-    // them, never in last week's.
+    // them, never in last week's. Not each dot in its own - three logs an hour
+    // apart are closer together than a fingertip, so no division of the slice
+    // can separate them, which is why this is the one run the cases above do
+    // not ask that of.
     const dots = dotXs(container);
     expect(bandAt(targets, dots[0])).toBe(0);
     for (const x of dots.slice(1)) {
-      expect(bandAt(targets, x)).toBeGreaterThan(0);
+      expect(bandAt(targets, x)).toBeGreaterThanOrEqual(1);
     }
 
     // Still one slice per log, still in plot order, each selecting its own.
