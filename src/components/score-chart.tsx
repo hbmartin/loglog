@@ -61,7 +61,9 @@ const MIN_HIT_X = MIN_HIT_WIDTH / PLOT_WIDTH;
  * dot again, by a longer route.
  *
  * It cannot promise MIN_HIT_WIDTH outright - thirty points on a thirty-day
- * window leave under 10 units each however they are cut - nor that a dot in a
+ * window leave under 10 units each however they are cut, and a run pressed
+ * against a plot edge gives its outermost member half a share so that the
+ * boundaries between the rest can stay on their dots - nor that a dot in a
  * tight cluster falls inside its own band, which for three logs in one
  * afternoon is not geometrically possible. What it does promise is that the
  * bands are in plot order, adjacent to the dots they select, and none of them
@@ -85,16 +87,41 @@ function hitBands(points: readonly ChartPoint[]): { id: string; x: number; width
     const left = previous === undefined ? 0 : (previous.x + points[start].x) / 2;
     const right = next === undefined ? 1 : (points[end - 1].x + next.x) / 2;
 
+    const count = end - start;
+    if (count === 1) {
+      // Every point on a chart that is not a cluster, which is most of them:
+      // the whole slice, and none of the division below to compute for it.
+      bands.push({ id: points[start].id, x: toX(left), width: toX(right) - toX(left) });
+      start = end;
+      continue;
+    }
+
     // Consecutive members are less than MIN_HIT_X apart, so the run's own
     // extent is always narrower than the window being divided, and the window
     // always sits over it. Where the slice is too narrow to give everyone
     // MIN_HIT_X, the window is the whole slice and every member takes an equal
     // share of it, which is the widest the narrowest band can be.
-    const count = end - start;
     const divided = Math.min(count * MIN_HIT_X, right - left);
-    const centre = (points[start].x + points[end - 1].x) / 2;
-    const from = Math.min(Math.max(centre - divided / 2, left), right - divided);
     const step = divided / count;
+    const centre = (points[start].x + points[end - 1].x) / 2;
+
+    // What has to stay inside the slice is the boundaries between members,
+    // not the window's own edges: the outermost members' bands run out to
+    // `left` and `right` whatever the window does, so the boundaries are the
+    // whole of what decides which dot belongs to which band. Held half a share
+    // inside, they leave every band at least that wide - which is all the
+    // outermost two need, and they do need it: the newest log sits exactly on
+    // the plot's right edge whenever it was the last thing saved, and a band
+    // clamped to that edge is a target with no area.
+    //
+    // Clamping the whole window inside the slice instead - a full share on
+    // each side - drags every boundary a step off its dot as soon as a run
+    // reaches a plot edge, which is where a run of daily logs always is. Four
+    // of those ending today put each dot in its neighbour's band, and left the
+    // oldest reachable only by tapping the empty left-hand four fifths of the
+    // plot: the unreachable dot again, one edge further out.
+    const margin = step / 2;
+    const from = Math.min(Math.max(centre - divided / 2, left - margin), right - divided + margin);
 
     for (let index = start; index < end; index += 1) {
       const offset = index - start;

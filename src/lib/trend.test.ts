@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   chartSeries,
-  CLOCK_TICK_MS,
+  compareTime,
   regularity,
   standings,
   summarise,
@@ -59,6 +59,25 @@ describe("summarise", () => {
     expect(trend.lastWeek).toBe(1);
     expect(trend.average).toBe(2);
     expect(trend.offIdeal).toBe(0);
+    // The total is counted through the same guard as everything beside it, or
+    // the screen claims a history it then refuses to describe.
+    expect(trend.total).toBe(1);
+  });
+});
+
+describe("compareTime", () => {
+  it("orders mixed-precision timestamps by the instant, not the text", () => {
+    expect(compareTime("2026-03-10T12:00:00Z", "2026-03-10T12:00:00.500Z")).toBeLessThan(0);
+  });
+
+  it("sorts an unparseable timestamp oldest rather than nowhere at all", () => {
+    // Returning NaN puts it nowhere: sort coerces that to 0, so the entry
+    // compares equal to every other one at once and the order stops being
+    // transitive - which can leave it at index 0 of a newest-first list, the
+    // entry the dog page reads as the latest log.
+    expect(compareTime("not-a-date", "2026-03-10T12:00:00Z")).toBeLessThan(0);
+    expect(compareTime("2026-03-10T12:00:00Z", "not-a-date")).toBeGreaterThan(0);
+    expect(compareTime("not-a-date", "also-not-a-date")).toBe(0);
   });
 });
 
@@ -151,32 +170,33 @@ describe("chartSeries", () => {
   });
 });
 
-describe("the clock's own lag", () => {
-  // useNow steps once a minute, so a score saved between steps is dated after
-  // the `now` every helper here measures against. Read as a future record -
-  // which is what these guards do to a device whose clock genuinely ran ahead
-  // - the save moved nothing but the history list: not the chart, not the week
-  // count, not the mean, not the streak.
-  const fresh: PoopLog = { ...log(0, 2), id: "fresh", loggedAt: iso(NOW + 20_000) };
-  const skewed: PoopLog = { ...log(0, 2), id: "skewed", loggedAt: iso(NOW + 2 * CLOCK_TICK_MS) };
+describe("a log dated after `now`", () => {
+  // Nothing the app itself writes lands here: useNow steps on the write that
+  // saves a score, so the reading every helper below measures against is never
+  // behind the store - see clock.ts. What is left ahead of `now` is what these
+  // guards exist for, a device whose clock ran ahead or a record imported from
+  // one that had, and no window forgives it by so much as a second.
+  const ahead: PoopLog = { ...log(0, 2), id: "ahead", loggedAt: iso(NOW + 20_000) };
+  const onTheDot: PoopLog = { ...log(0, 2), id: "on the dot", loggedAt: iso(NOW) };
 
-  it("counts a log written since the last step, and nothing further ahead", () => {
-    expect(summarise([fresh], NOW).lastWeek).toBe(1);
-    expect(summarise([skewed], NOW).lastWeek).toBe(0);
+  it("is dropped by the total and the week count alike", () => {
+    const trend = summarise([ahead, log(1, 3)], NOW);
+    expect(trend.total).toBe(1);
+    expect(trend.lastWeek).toBe(1);
   });
 
-  it("plots that log at the right-hand edge rather than past it", () => {
-    const { points } = chartSeries([fresh], NOW);
+  it("is left off the chart and out of the report window", () => {
+    expect(chartSeries([ahead], NOW).points).toEqual([]);
+    expect(withinDays([ahead], 30, NOW)).toEqual([]);
+  });
+
+  it("still plots one dated exactly now, at the right-hand edge", () => {
+    const { points } = chartSeries([onTheDot], NOW);
     expect(points).toHaveLength(1);
-    // Not merely close to 1: a point past the edge is drawn outside the plot
-    // and to the right of the last gridline's label.
+    // Not merely close to 1: a point past the edge would be drawn outside the
+    // plot and to the right of the last gridline's label.
     expect(points[0].x).toBe(1);
-    expect(chartSeries([skewed], NOW).points).toEqual([]);
-  });
-
-  it("keeps that log in the report window", () => {
-    expect(withinDays([fresh], 30, NOW).map((entry) => entry.id)).toEqual(["fresh"]);
-    expect(withinDays([skewed], 30, NOW)).toEqual([]);
+    expect(withinDays([onTheDot], 30, NOW).map((entry) => entry.id)).toEqual(["on the dot"]);
   });
 });
 
@@ -232,18 +252,20 @@ describe("regularity", () => {
     expect(regularity([localLog("a", 2, 2), localLog("b", 3, 2)], NOW_LOCAL)).toBe(0);
   });
 
-  it("keeps the streak for a log saved just after midnight", () => {
-    // 23:59:50 by a clock that steps once a minute, and a log fifteen seconds
-    // later: it belongs to a day `now` has not reached yet. Dropped as
-    // future-dated, the streak read zero on the screen that had just recorded
-    // it, until the clock caught up a moment later.
+  it("carries the streak over midnight rather than restarting it", () => {
+    // A log fifteen seconds into the new day, and a reading taken as it was
+    // saved - which is what useNow gives, since it steps on the write. The run
+    // has to end on the day the cursor starts from, and that day is now the
+    // new one: reading yesterday as the end instead would count the new log
+    // for nothing and show a streak of one on the screen that just recorded a
+    // second consecutive day.
     const midnight = new Date(LOCAL_NOON);
     midnight.setHours(24, 0, 0, 0);
     const fresh: PoopLog = {
       ...localLog("fresh", 0, 2),
       loggedAt: new Date(midnight.getTime() + 15_000).toISOString(),
     };
-    expect(regularity([fresh, localLog("today", 0, 2)], midnight.getTime() - 10_000)).toBe(2);
+    expect(regularity([fresh, localLog("today", 0, 2)], midnight.getTime() + 15_000)).toBe(2);
   });
 
   it("ignores scores entirely - it counts logging, not quality", () => {

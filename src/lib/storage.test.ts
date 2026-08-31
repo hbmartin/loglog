@@ -251,4 +251,19 @@ describe("newestLog", () => {
   it("answers undefined for a dog with nothing logged", () => {
     expect(newestLog(logsByDog(EMPTY_STORE).get("nobody"))).toBeUndefined();
   });
+
+  it("still answers when no timestamp in the history parses", () => {
+    // compareTime sorts an unreadable date oldest, so there is no newer entry
+    // to prefer and the first in store order is what logsForDog puts at the
+    // top. Answering undefined instead dropped the dog out of the list
+    // screen's map of latest entries, and its row read "nothing logged yet"
+    // over a history on file.
+    const store: Store = {
+      version: 1,
+      dogs: [{ id: "d1", name: "Rex", createdAt: "2026-01-01T00:00:00.000Z" }],
+      logs: [poopLog("a", "d1", "not-a-date"), poopLog("b", "d1", "also-not-a-date")],
+    };
+    expect(newestLog(logsByDog(store).get("d1"))?.id).toBe("a");
+    expect(newestLog(logsByDog(store).get("d1"))?.id).toBe(logsForDog(store, "d1")[0].id);
+  });
 });

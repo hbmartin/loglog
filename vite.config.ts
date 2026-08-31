@@ -159,9 +159,10 @@ function serviceWorkerVersion(): Plugin {
       value: (files, dir) => JSON.stringify(assetUrls(files, dir)),
     },
     // The list above is named once, inside the branch this guard selects, so
-    // that the substitution writes it into dist/sw.js once. Guarding on
-    // `typeof __BUILD_ASSETS__` instead stamped every URL twice, into a file
-    // _headers marks no-cache.
+    // that the substitution writes it into dist/sw.js once. Guarding the
+    // worker on a `typeof` of the list marker instead named it twice and
+    // stamped every URL twice, into a file _headers marks no-cache; the
+    // once-only check below is what now catches that.
     __BUILD_STAMPED__: {
       consequence:
         "Without it the worker takes its unstamped branch and pre-caches no assets at all, whatever __BUILD_ASSETS__ holds.",
@@ -179,9 +180,21 @@ function serviceWorkerVersion(): Plugin {
     async closeBundle() {
       const file = path.join(outDir, "sw.js");
       const source = await readFile(file, "utf8");
+      // Exactly once, not merely present. Every marker is replaced everywhere
+      // it appears, comments included, so a doc comment that names the marker
+      // it documents writes the whole value into the file a second time - a
+      // file _headers marks no-cache, and so one the browser downloads in full
+      // on every load. Presence alone was satisfied by that second mention,
+      // which is how the asset list came to be stamped twice.
       for (const [marker, { consequence }] of Object.entries(MARKERS)) {
-        if (!source.includes(marker)) {
+        const mentions = source.split(marker).length - 1;
+        if (mentions === 0) {
           throw new Error(`${file} no longer contains ${marker}. ${consequence}`);
+        }
+        if (mentions > 1) {
+          throw new Error(
+            `${file} names ${marker} ${mentions} times and every mention is substituted. Name it once, in the line that reads it.`,
+          );
         }
       }
 

@@ -24,10 +24,13 @@ const CACHE_VERSION = "loglog-__CACHE_VERSION__";
  * after a deploy with an index.html whose script tags resolve to nothing: a
  * blank page, on the one screen holding the user's only copy of their data.
  *
- * Guarded on a marker of its own rather than on `typeof __BUILD_ASSETS__`,
- * which names the list twice: the substitution then writes the whole thing
- * into the file twice, in a worker _headers marks no-cache and the browser
- * therefore re-downloads in full on every load.
+ * Guarded on a marker of its own rather than on a `typeof` of the list marker
+ * itself, which would name that marker a second time. Every marker is replaced
+ * everywhere it appears, comments included, so a second mention writes the
+ * whole list into this file again - in a worker _headers marks no-cache, which
+ * the browser therefore re-downloads in full on every load. Nothing here may
+ * write that marker's name outside the one line that uses it, and the build
+ * fails on a second mention rather than shipping one.
  *
  * The guard is still a `typeof`, because public/ is copied verbatim and `vite
  * dev` serves this file with the markers still in it. A bare undeclared
@@ -90,11 +93,15 @@ async function withoutRedirect(response) {
     return response;
   }
   // Everything but the two headers that describe the transfer rather than the
-  // content. fetch hands the body over already decoded, so the original
-  // Content-Encoding and the compressed Content-Length beside it both describe
-  // bytes this copy does not have - and a browser that honours them on a
+  // content. They are wrong only on a Response assembled by hand from a body
+  // fetch has already decoded, which is what the line below does: the original
+  // Content-Encoding and the compressed Content-Length beside it then describe
+  // bytes this copy does not have, and a browser that honours them on a
   // service-worker response fails to decode, or truncates, the one entry the
-  // offline fallback exists to serve.
+  // offline fallback exists to serve. The other two writes to SHELL - the
+  // pre-cache of a response that did not redirect, and the navigation handler's
+  // refresh below - hand cache.put the fetched response itself, headers and
+  // body still describing each other, and so have nothing to strip.
   const headers = new Headers(response.headers);
   headers.delete("content-encoding");
   headers.delete("content-length");
@@ -126,6 +133,31 @@ async function precache(cache, url, expectHtml) {
     throw new Error(`${url} answered with the SPA fallback rather than the file itself`);
   }
   await cache.put(url, await withoutRedirect(response));
+}
+
+/**
+ * Fetches `request` and caches what comes back, answering the SPA fallback
+ * with a 404 rather than passing it on.
+ */
+function fromNetwork(request) {
+  return fetch(request).then((response) => {
+    if (isHtml(response)) {
+      // The file is gone, whatever the status line says. A real 404 lets an
+      // import reject as a missing module rather than as a confusing MIME-type
+      // error, and keeps the HTML out of the cache.
+      return new Response(null, { status: 404, statusText: "Not Found" });
+    }
+    if (response.ok) {
+      const copy = response.clone();
+      caches
+        .open(CACHE_VERSION)
+        .then((cache) => cache.put(request, copy))
+        // A put that fails leaves the previous entry in place. Unhandled it
+        // would be an unhandled rejection on every request that hit it.
+        .catch(() => {});
+    }
+    return response;
+  });
 }
 
 self.addEventListener("install", (event) => {
@@ -213,31 +245,29 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Build output is content-hashed, and every other entry belongs to a cache
-  // the next deploy throws away, so a hit is always current.
-  //
-  // The optional entries are matched here as well, which is what makes
-  // pre-caching them worth a request: reachable from no path at all, they were
-  // bytes stored on install for nothing.
-  if (url.pathname.startsWith("/assets/") || OPTIONAL_SHELL.includes(url.pathname)) {
-    event.respondWith(
-      caches.match(request).then(
-        (cached) =>
-          cached ??
-          fetch(request).then((response) => {
-            if (isHtml(response)) {
-              // The asset is gone, whatever the status line says. A real 404
-              // lets the import reject as a missing module rather than as a
-              // confusing MIME-type error, and keeps the HTML out of the cache.
-              return new Response(null, { status: 404, statusText: "Not Found" });
-            }
-            if (response.ok) {
-              const copy = response.clone();
-              caches.open(CACHE_VERSION).then((cache) => cache.put(request, copy));
-            }
-            return response;
-          }),
-      ),
-    );
+  // Build output is content-hashed, so a cached copy is the file itself and
+  // cannot be stale. A hit is answered without a request.
+  if (url.pathname.startsWith("/assets/")) {
+    event.respondWith(caches.match(request).then((cached) => cached ?? fromNetwork(request)));
+    return;
+  }
+
+  // The optional entries keep a fixed name, so a cached copy is only as good
+  // as its age - and _headers marks the manifest no-cache precisely because
+  // what stands behind that name can change without a deploy. Answering from
+  // the cache is what makes pre-caching them worth a request, since they are
+  // reachable from no other path and an app launched offline still needs its
+  // icon and its manifest; refreshing behind the answer is what keeps the copy
+  // at most one load stale rather than authoritative until the cache name
+  // changes. Against a no-cache header the refresh is a conditional request,
+  // so in the ordinary case it costs a 304 and no body.
+  if (OPTIONAL_SHELL.includes(url.pathname)) {
+    const refresh = fromNetwork(request);
+    event.respondWith(caches.match(request).then((cached) => cached ?? refresh));
+    // Both calls are made while the event is still being dispatched, which is
+    // the only time either is allowed. The refresh is not part of the response
+    // when a cached copy answered it, so without this the worker could be shut
+    // down before it lands.
+    event.waitUntil(refresh.catch(() => {}));
   }
 });
