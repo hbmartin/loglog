@@ -13,10 +13,11 @@ const TICK_COUNT = 5;
  * outside all of them.
  *
  * The comparison is exact, with no allowance for a `now` that lags. It does
- * not need one: a reading is either taken directly, as the report screen takes
- * it, or comes from useNow, whose contract is that it is never behind the
- * store - see clock.ts. What that leaves outside is what this guard exists
- * for, a device whose clock ran ahead or a log imported from one that had.
+ * not need one: every reading a screen measures against comes from clock.ts -
+ * useNow for a live one, useSnapshotNow for a held one - and the contract both
+ * hooks keep is that the reading is never behind the store. What that leaves
+ * outside is what this guard exists for, a device whose clock ran ahead or a
+ * log imported from one that had.
  */
 export function hasHappened(at: number, now: number): boolean {
   return !Number.isNaN(at) && at <= now;
@@ -58,35 +59,56 @@ export type Trend = {
   /** Mean score over the last week, or null when nothing was logged. */
   average: number | null;
   offIdeal: number;
+  /**
+   * When the newest log that has happened was logged, or null for a record
+   * with nothing in it yet. Read through the same guard as the counts beside
+   * it, so the "Last" caption cannot describe an entry the rest of the summary
+   * dropped.
+   */
+  lastLoggedAt: string | null;
 };
 
 export function summarise(logs: readonly PoopLog[], now = Date.now()): Trend {
-  // One pass, and one parse per log. `total` is counted through the same guard
-  // as every field beside it: a log dated 2030 that raised the total while the
+  // One pass, and one parse per log - every field below is folded in this
+  // loop, none of them walk the list again. `total` is counted through the
+  // same guard as the rest: a log dated 2030 that raised the total while the
   // week count, the mean, the streak and the chart all dropped it left the
   // screen claiming a history it then refused to describe - "Last: just now",
   // no mean, no streak, an empty chart and every milestone locked.
-  const recent: PoopLog[] = [];
   let total = 0;
+  let lastWeek = 0;
+  let sum = 0;
+  let offIdeal = 0;
+  let lastLoggedAt: string | null = null;
+  // Newest first is what logsForDog hands over, but nothing here relies on the
+  // caller having sorted: the newest is tracked by instant.
+  let lastAt = Number.NEGATIVE_INFINITY;
+
   for (const log of logs) {
     const at = new Date(log.loggedAt).getTime();
     if (!hasHappened(at, now)) {
       continue;
     }
     total += 1;
+    if (at > lastAt) {
+      lastAt = at;
+      lastLoggedAt = log.loggedAt;
+    }
     if (now - at <= WEEK_MS) {
-      recent.push(log);
+      lastWeek += 1;
+      sum += log.score;
+      if (!scoreInfo(log.score).ideal) {
+        offIdeal += 1;
+      }
     }
   }
 
-  const average =
-    recent.length === 0 ? null : recent.reduce((sum, log) => sum + log.score, 0) / recent.length;
-
   return {
     total,
-    lastWeek: recent.length,
-    average,
-    offIdeal: recent.filter((log) => !scoreInfo(log.score).ideal).length,
+    lastWeek,
+    average: lastWeek === 0 ? null : sum / lastWeek,
+    offIdeal,
+    lastLoggedAt,
   };
 }
 

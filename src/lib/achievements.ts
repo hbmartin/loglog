@@ -51,10 +51,18 @@ type Dated = { log: PoopLog; at: Date };
  * downstream has to check for one.
  */
 function dated(logs: readonly PoopLog[], now: number): Dated[] {
-  return logs.flatMap((log) => {
+  // A plain loop rather than flatMap: this runs over a dog's whole history
+  // every time the clock steps, and the one-element and empty array literals
+  // flatMap needs to express a filter-and-map are an allocation per log on top
+  // of the Date and the wrapper it actually keeps.
+  const happened: Dated[] = [];
+  for (const log of logs) {
     const at = new Date(log.loggedAt);
-    return hasHappened(at.getTime(), now) ? [{ log, at }] : [];
-  });
+    if (hasHappened(at.getTime(), now)) {
+      happened.push({ log, at });
+    }
+  }
+  return happened;
 }
 
 /**

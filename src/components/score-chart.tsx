@@ -62,8 +62,8 @@ const MIN_HIT_X = MIN_HIT_WIDTH / PLOT_WIDTH;
  *
  * It cannot promise MIN_HIT_WIDTH outright - thirty points on a thirty-day
  * window leave under 10 units each however they are cut, and a run pressed
- * against a plot edge gives its outermost member half a share so that the
- * boundaries between the rest can stay on their dots - nor that a dot in a
+ * against a plot edge gives up some of its outermost member's share so that
+ * the boundaries between the rest can stay on their dots - nor that a dot in a
  * tight cluster falls inside its own band, which for three logs in one
  * afternoon is not geometrically possible. What it does promise is that the
  * bands are in plot order, adjacent to the dots they select, and none of them
@@ -108,20 +108,41 @@ function hitBands(points: readonly ChartPoint[]): { id: string; x: number; width
     // What has to stay inside the slice is the boundaries between members,
     // not the window's own edges: the outermost members' bands run out to
     // `left` and `right` whatever the window does, so the boundaries are the
-    // whole of what decides which dot belongs to which band. Held half a share
-    // inside, they leave every band at least that wide - which is all the
-    // outermost two need, and they do need it: the newest log sits exactly on
-    // the plot's right edge whenever it was the last thing saved, and a band
-    // clamped to that edge is a target with no area.
+    // whole of what decides which dot belongs to which band.
     //
-    // Clamping the whole window inside the slice instead - a full share on
-    // each side - drags every boundary a step off its dot as soon as a run
-    // reaches a plot edge, which is where a run of daily logs always is. Four
-    // of those ending today put each dot in its neighbour's band, and left the
-    // oldest reachable only by tapping the empty left-hand four fifths of the
-    // plot: the unreachable dot again, one edge further out.
-    const margin = step / 2;
-    const from = Math.min(Math.max(centre - divided / 2, left - margin), right - divided + margin);
+    // Clamping the whole window inside the slice - a full share on each side -
+    // drags every boundary a step off its dot as soon as a run reaches a plot
+    // edge, which is where a run of daily logs always is. Four of those ending
+    // today put each dot in its neighbour's band, and left the oldest
+    // reachable only by tapping the empty left-hand four fifths of the plot:
+    // the unreachable dot again, one edge further out. So the window is
+    // allowed to hang past the slice - but only by as much as that costs.
+    //
+    // What each margin buys is one boundary: the one beside the outermost dot,
+    // which is the only thing between that dot and its neighbour. Held a
+    // quarter of the way along the gap the two of them share, it leaves the
+    // dot on the far side of it a clear three quarters, and leaves the run's
+    // remaining slack where it can be afforded - in the band beyond, which
+    // runs out to the plot edge with most of the plot to spare. A fixed half a
+    // share instead took the same clearance from a run that did not need it:
+    // the newest log sits exactly on the plot's right edge whenever it was the
+    // last thing saved, so it is the newest, most-tapped dot that was left
+    // with half of MIN_HIT_WIDTH - five user units, a target the module's own
+    // floor calls too small to exist - while the dot beside it kept a full
+    // share and the one beyond it kept nine tenths of the plot.
+    //
+    // Half a share stays the floor rather than the rule. A cluster too tight
+    // for a quarter of its gap to be worth anything is the case that cannot be
+    // solved by moving a boundary, and it is the case that floor was for.
+    const marginFor = (slack: number, gap: number) =>
+      Math.min(Math.max(step - slack + gap / 4, 0), step / 2);
+    const from = Math.min(
+      Math.max(
+        centre - divided / 2,
+        left - marginFor(points[start + 1].x - left, points[start + 1].x - points[start].x),
+      ),
+      right - divided + marginFor(right - points[end - 2].x, points[end - 1].x - points[end - 2].x),
+    );
 
     for (let index = start; index < end; index += 1) {
       const offset = index - start;

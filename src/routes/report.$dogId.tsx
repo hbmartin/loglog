@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { ChevronLeft, Printer } from "lucide-react";
 import { ScoreChart } from "@/components/score-chart";
 import { Button } from "@/components/ui/button";
+import { useSnapshotNow } from "@/lib/clock";
 import { COLOR_INFO, FLAG_LABELS, scoreInfo } from "@/lib/purina";
 import { findDog, logsForDog, useStore } from "@/lib/storage";
 import { chartSeries, withinDays } from "@/lib/trend";
@@ -27,13 +28,14 @@ function ReportPage() {
   const store = useStore();
   const dog = findDog(store, dogId);
 
-  // Captured once, so the timestamp on a printed page is the moment it was
-  // opened rather than whenever React last happened to re-render it. Every
-  // window below is measured from it too: a report is a snapshot, and its
-  // chart, its table and its printed timestamp all have to agree about when
-  // it was taken rather than each picking up its own Date.now().
-  const [preparedAt] = useState(() => new Date());
-  const asOf = preparedAt.getTime();
+  // Held still, so the timestamp on a printed page is not whenever React last
+  // happened to re-render it, and every window below is measured from the same
+  // moment: a report is a snapshot, and its chart, its table and its printed
+  // timestamp all have to agree about when it was taken rather than each
+  // picking up its own Date.now(). Stepped on a write and only on a write,
+  // because this screen re-renders on one - see useSnapshotNow.
+  const asOf = useSnapshotNow();
+  const preparedAt = new Date(asOf);
 
   const logs = useMemo(() => (dog === undefined ? [] : logsForDog(store, dog.id)), [store, dog]);
   const series = useMemo(() => chartSeries(logs, asOf), [logs, asOf]);

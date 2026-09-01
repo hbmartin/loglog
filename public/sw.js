@@ -160,6 +160,37 @@ function fromNetwork(request) {
   });
 }
 
+/**
+ * Fetches `request` and writes what comes back to the cache, answering
+ * nothing. Resolves once the write has landed rather than once the response
+ * has arrived, which is the whole point of it: a fetch promise settles as soon
+ * as the headers are in, with the body still to come, so a worker kept alive
+ * only until then is free to shut down mid-put and leave the entry at the
+ * bytes it already had.
+ *
+ * Hands the response itself to cache.put rather than a clone, unlike
+ * fromNetwork, which has to give its own copy back to the page. A clone tees
+ * the body, and a tee with one branch never read buffers the whole file in
+ * memory instead of letting the cache pull it through.
+ *
+ * Never rejects. A refresh is best-effort by construction: the request that
+ * fails is the one made offline, on every load, and the cached copy it could
+ * not improve on is still there.
+ */
+function refreshInCache(request) {
+  return fetch(request)
+    .then((response) => {
+      // The file is gone or the origin is unhappy - see fromNetwork, which
+      // turns the same answer into a 404. Overwriting a good cached copy with
+      // either is strictly worse than keeping what is already there.
+      if (!response.ok || isHtml(response)) {
+        return undefined;
+      }
+      return caches.open(CACHE_VERSION).then((cache) => cache.put(request, response));
+    })
+    .catch(() => {});
+}
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
@@ -253,8 +284,8 @@ self.addEventListener("fetch", (event) => {
   }
 
   // The optional entries keep a fixed name, so a cached copy is only as good
-  // as its age - and _headers marks the manifest no-cache precisely because
-  // what stands behind that name can change without a deploy. Answering from
+  // as its age - and _headers marks both of them no-cache precisely because
+  // what stands behind such a name can change without a deploy. Answering from
   // the cache is what makes pre-caching them worth a request, since they are
   // reachable from no other path and an app launched offline still needs its
   // icon and its manifest; refreshing behind the answer is what keeps the copy
@@ -262,12 +293,25 @@ self.addEventListener("fetch", (event) => {
   // changes. Against a no-cache header the refresh is a conditional request,
   // so in the ordinary case it costs a 304 and no body.
   if (OPTIONAL_SHELL.includes(url.pathname)) {
-    const refresh = fromNetwork(request);
-    event.respondWith(caches.match(request).then((cached) => cached ?? refresh));
+    const answered = caches.match(request);
+    // One request either way. A refresh is only worth making behind an answer
+    // that came out of the cache; on a miss the fetch below is the answer
+    // itself, and firing both would fetch the same file twice.
+    const refreshed = answered
+      .then((cached) => (cached === undefined ? undefined : refreshInCache(request)))
+      // refreshInCache does not reject, but the lookup in front of it can.
+      // respondWith below already answers that failure; rejecting here too
+      // would add nothing but an unhandled rejection beside it.
+      .catch(() => {});
+
     // Both calls are made while the event is still being dispatched, which is
-    // the only time either is allowed. The refresh is not part of the response
-    // when a cached copy answered it, so without this the worker could be shut
-    // down before it lands.
-    event.waitUntil(refresh.catch(() => {}));
+    // the only time either is allowed. The refresh is no part of the response
+    // when a cached copy answered it, so without this the worker is free to be
+    // shut down before it lands - and what has to be waited on is the write,
+    // not the fetch, which is why refreshInCache resolves on the one rather
+    // than the other.
+    event.respondWith(answered.then((cached) => cached ?? fromNetwork(request)));
+    event.waitUntil(refreshed);
+    return;
   }
 });

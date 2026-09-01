@@ -69,6 +69,12 @@ export function loggedYears(store: Store): number[] {
 
 export function wrapUp(store: Store, year: number): Wrapped {
   const logs = store.logs.filter((log) => inYear(log, year));
+  // Bounded to the year already, so "now" can be the end of it - and has to be
+  // the same end for everything measured against one. Left to its Date.now()
+  // default, longestIdealRun read a log dated later today as the future while
+  // activeDays, measured here, counted the day it fell on: the summary
+  // reported an active day the ideal-run streak beside it refused to count.
+  const endOfYear = Date.parse(`${year + 1}-01-01T00:00:00Z`);
   const scores = logs.map((log) => log.score);
   const colors = logs.flatMap((log) => (log.color === null ? [] : [log.color]));
 
@@ -99,9 +105,8 @@ export function wrapUp(store: Store, year: number): Wrapped {
     topColor: top(tally(colors)),
     busiestHour: top(tally(logs.map((log) => new Date(log.loggedAt).getHours()))),
     busiestDay: top(tally(logs.map((log) => dayKey(new Date(log.loggedAt))))),
-    // Bounded to the year already, so "now" can be the end of it.
-    activeDays: loggedDays(logs, Date.parse(`${year + 1}-01-01T00:00:00Z`)).size,
-    longestIdealRun: longestIdealRun(logs),
+    activeDays: loggedDays(logs, endOfYear).size,
+    longestIdealRun: longestIdealRun(logs, endOfYear),
     flagged: logs.filter((log) => log.flags.length > 0).length,
     perDog,
   };

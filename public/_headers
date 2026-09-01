@@ -3,7 +3,13 @@
 /sw.js
   Cache-Control: no-cache
 
+# The two fixed names the service worker answers from its cache and then
+# refreshes behind that answer. Without this the refresh is an unconditional
+# download of the whole file on every load rather than the 304 it is costed on.
 /manifest.json
+  Cache-Control: no-cache
+
+/favicon.ico
   Cache-Control: no-cache
 
 # Vite emits content-hashed filenames here.

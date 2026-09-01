@@ -36,7 +36,13 @@ describe("summarise", () => {
       lastWeek: 0,
       average: null,
       offIdeal: 0,
+      lastLoggedAt: null,
     });
+  });
+
+  it("reports the newest log that has happened, whatever order it arrives in", () => {
+    const trend = summarise([log(3, 2), log(1, 3), log(9, 7)], NOW);
+    expect(trend.lastLoggedAt).toBe(log(1, 3).loggedAt);
   });
 
   it("counts all logs but averages only the last 7 days", () => {
@@ -62,6 +68,10 @@ describe("summarise", () => {
     // The total is counted through the same guard as everything beside it, or
     // the screen claims a history it then refuses to describe.
     expect(trend.total).toBe(1);
+    // Including the caption. Reading the caller's first element instead put
+    // "Last: just now" at the top of a summary that had dropped that entry
+    // from every figure under it.
+    expect(trend.lastLoggedAt).toBe(log(7, 2).loggedAt);
   });
 });
 

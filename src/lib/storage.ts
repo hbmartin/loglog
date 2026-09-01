@@ -101,28 +101,43 @@ function mutate(update: (current: Store) => Store): void {
 }
 
 /**
+ * Another tab wrote to the same key: drop the cache, then tell everyone.
+ *
+ * One handler for the whole module rather than one per subscriber. Both halves
+ * of that matter. Invalidating once, before any listener runs, is what leaves
+ * the first read to re-parse and every later one to hit the cache it filled; a
+ * handler per subscriber nulled the cache again after that read, so each extra
+ * subscriber cost another full JSON.parse and schema check of the entire log
+ * list, and handed useSyncExternalStore a new object identity for data that
+ * had not changed - an extra render on top of the extra parse. And notifying
+ * every listener from the one handler is what keeps a foreign write and a
+ * local one the same event: write() below fans out the same way.
+ */
+function onStorage(event: StorageEvent): void {
+  if (event.key === STORAGE_KEY || event.key === null) {
+    cache = null;
+    for (const listener of listeners) {
+      listener();
+    }
+  }
+}
+
+/**
  * Run `listener` on every write to the store, this tab's and another tab's
  * both. Exported because useStore is not the only thing that has to hear one:
  * useNow steps its reading on a write too, which is what keeps the clock ahead
  * of every record the store holds - see clock.ts.
  */
 export function subscribeToStore(listener: () => void): () => void {
+  const first = listeners.size === 0;
   listeners.add(listener);
-
-  // Another tab wrote to the same key: drop the cache and re-render.
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === STORAGE_KEY || event.key === null) {
-      cache = null;
-      listener();
-    }
-  };
-  if (typeof window !== "undefined") {
+  if (first && typeof window !== "undefined") {
     window.addEventListener("storage", onStorage);
   }
 
   return () => {
     listeners.delete(listener);
-    if (typeof window !== "undefined") {
+    if (listeners.size === 0 && typeof window !== "undefined") {
       window.removeEventListener("storage", onStorage);
     }
   };
@@ -262,4 +277,16 @@ export function findDog(store: Store, dogId: string): Dog | undefined {
 /** Test seam: reset module state between cases. */
 export function __resetCache(): void {
   cache = null;
+}
+
+/**
+ * Test seam: how many subscribers the store would notify on a write.
+ *
+ * A leaked subscription is invisible from the outside - React does not
+ * re-render an unmounted tree, so a hook that forgot to unsubscribe sets state
+ * into the void and every assertion on what it returned still passes. This is
+ * the only place the leak is observable.
+ */
+export function __listenerCount(): number {
+  return listeners.size;
 }

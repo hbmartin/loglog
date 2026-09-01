@@ -94,6 +94,15 @@ function DogPage() {
   // "past 7 days", and only adding or deleting a log would move it.
   const now = useNow();
 
+  // What the record holds, read once for every gate on the screen. The
+  // summary's empty state, the history list, the export button and the report
+  // link all answer the same question - is there anything on file at all - and
+  // answering it twice is how the summary came to say "No logs yet" directly
+  // above a populated history: it was keyed on the logs that have happened,
+  // which a single entry dated in the future leaves at none, while the three
+  // below stayed on the record itself.
+  const onFile = logs.length;
+
   const trend = useMemo(() => summarise(logs, now), [logs, now]);
   const series = useMemo(() => chartSeries(logs, now), [logs, now]);
   const streak = useMemo(() => regularity(logs, now), [logs, now]);
@@ -188,7 +197,7 @@ function DogPage() {
             </Link>
           }
         />
-        {logs.length === 0 ? null : (
+        {onFile === 0 ? null : (
           <Button
             variant="ghost"
             size="sm"
@@ -204,7 +213,7 @@ function DogPage() {
 
       <h1 className="font-display text-2xl font-semibold tracking-tight">{dog.name}</h1>
 
-      <TrendSummary trend={trend} lastLoggedAt={logs[0]?.loggedAt} streak={streak} now={now} />
+      <TrendSummary trend={trend} onFile={onFile} streak={streak} now={now} />
 
       <ScoreChart className="mt-4" series={series} label={label} />
 
@@ -375,7 +384,7 @@ function DogPage() {
           <h2 id="history-heading" className="font-semibold">
             {copy.historyHeading}
           </h2>
-          {logs.length === 0 ? null : (
+          {onFile === 0 ? null : (
             <Button variant="ghost" size="sm" onClick={exportOne}>
               <Download />
               {copy.exportOne}
@@ -383,7 +392,7 @@ function DogPage() {
           )}
         </div>
 
-        {logs.length === 0 ? (
+        {onFile === 0 ? (
           <p className="text-muted-foreground text-sm">{copy.historyEmpty}</p>
         ) : (
           <ul className="flex flex-col gap-2">
@@ -421,20 +430,31 @@ function DogPage() {
   );
 }
 
+/**
+ * `onFile` is every entry the record holds, which is what the history list,
+ * the export and the report link below are all gated on; `trend` describes the
+ * subset that has happened. The empty state is a statement about the record,
+ * so it belongs to the first: keyed on the second, a single log dated in the
+ * future - a phone whose clock ran ahead when a score was saved - put "No logs
+ * yet" directly above a populated history, with the export button and the
+ * report link beside it. A record with nothing in it that has happened yet
+ * gets the dashes and zeroes instead, which is the same thing the chart under
+ * it and every milestone say.
+ */
 function TrendSummary({
   trend,
-  lastLoggedAt,
+  onFile,
   streak,
   now,
 }: Readonly<{
   trend: ReturnType<typeof summarise>;
-  lastLoggedAt: string | undefined;
+  onFile: number;
   streak: number;
   now: number;
 }>) {
   const copy = useLexicon();
 
-  if (trend.total === 0) {
+  if (onFile === 0) {
     return <p className="text-muted-foreground mt-1 text-sm">No logs yet — pick a score below.</p>;
   }
 
@@ -442,7 +462,7 @@ function TrendSummary({
     <div className="mt-3 grid grid-cols-2 gap-2">
       <Stat
         label={copy.statLast}
-        value={lastLoggedAt === undefined ? "—" : timeAgo(lastLoggedAt, now)}
+        value={trend.lastLoggedAt === null ? "—" : timeAgo(trend.lastLoggedAt, now)}
       />
       <Stat label={copy.statWeek} value={String(trend.lastWeek)} />
       <Stat
