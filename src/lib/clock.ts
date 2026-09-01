@@ -41,6 +41,10 @@ export const CLOCK_TICK_MS = 60_000;
  * every window helper instead widens the guard for the callers that read the
  * clock exactly as well, the report screen among them, and none of those has
  * any lag to forgive.
+ *
+ * A reading taken with `new Date()` and then held is the case that guard does
+ * not cover, which is why useSnapshotNow below exists rather than each screen
+ * rolling its own.
  */
 export function useNow(): number {
   const [tick, setTick] = useState(() => Date.now());
@@ -64,4 +68,31 @@ export function useNow(): number {
   }, []);
 
   return tick;
+}
+
+/**
+ * A reading for a screen that is a snapshot: taken once and then held still,
+ * stepped only when the record it describes changes.
+ *
+ * The report screen wants a fixed moment - the timestamp it prints, the
+ * 30-day window, the chart and the table all have to be the same one, and a
+ * figure that moves while somebody reads it off a page they are about to print
+ * is not a snapshot. What it cannot have is a moment fixed *before* the record
+ * it renders: it re-renders on every write, this tab's and another tab's, so a
+ * reading frozen at mount and an exact hasHappened between them meant a log
+ * saved after the report was opened - a second tab, or a PWA left on this
+ * screen - was dated after `now` forever. It vanished from the chart, from
+ * "Entries", from the mean, from "Within 2-3" and from the table, while the
+ * header went on counting it in the entries on file.
+ *
+ * So: no interval and no visibility listener, because nothing here is measured
+ * in minutes elapsed, and the store subscription that useNow has, because that
+ * is the half that keeps the reading from being older than what it describes.
+ */
+export function useSnapshotNow(): number {
+  const [taken, setTaken] = useState(() => Date.now());
+
+  useEffect(() => subscribeToStore(() => setTaken(Date.now())), []);
+
+  return taken;
 }

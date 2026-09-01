@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { hourLabel, loggedYears, wrapUp } from "@/lib/wrapped";
 import type { Dog, PoopColor, PoopFlag, PoopLog, Store } from "@/lib/types";
 
@@ -93,6 +93,23 @@ describe("wrapUp", () => {
     const summary = wrapUp(s, 2026);
     expect(summary.total).toBe(3);
     expect(summary.activeDays).toBe(2);
+  });
+
+  it("measures the streak against the same end of year the active days use", () => {
+    // A device whose clock ran ahead - or a record edited by hand - dates a
+    // log later today. activeDays is measured against the end of the year and
+    // counts the day it falls on; longestIdealRun, left to its Date.now()
+    // default, read the same entry as the future and refused it. The summary
+    // then reported an active day the streak beside it would not count.
+    vi.useFakeTimers();
+    vi.setSystemTime(at(5, 15, 12));
+    const s = store([log("a", at(5, 15, 18), 3)]);
+
+    const summary = wrapUp(s, 2026);
+    expect(summary.activeDays).toBe(1);
+    expect(summary.longestIdealRun).toBe(1);
+
+    vi.useRealTimers();
   });
 
   it("counts entries carrying any finding", () => {

@@ -128,6 +128,27 @@ describe("ScoreChart", () => {
     expect(caption(container)).toContain("Firm, segmented");
   });
 
+  it("does not shrink the newest dot's slice to reach the plot edge", () => {
+    // The same run of daily logs. The newest dot sits exactly on the plot's
+    // right edge whenever it was the last thing saved, so its slice can only
+    // grow leftwards - and holding the divided window a fixed half share
+    // inside the run's own slice left it with half of MIN_HIT_WIDTH, five user
+    // units, on the most-tapped dot on the chart, while the dot beside it kept
+    // a full share and the oldest of the four kept nine tenths of the plot.
+    // What the boundary between the last two actually needs is to clear the
+    // older of them; the slack goes to the band with a plot edge to absorb it.
+    const { container } = render(
+      draw([log("d3", 3 * DAY, 2), log("d2", 2 * DAY, 3), log("d1", DAY, 6), log("today", 0, 7)]),
+    );
+    const widths = hitTargets(container).map((rect) => Number(rect.getAttribute("width")));
+
+    expect(widths[3]).toBeGreaterThan(7);
+    // And not out of its neighbours' share: the interior bands still get the
+    // whole of MIN_HIT_WIDTH each, float noise aside.
+    expect(widths[1]).toBeGreaterThan(9.99);
+    expect(widths[2]).toBeGreaterThan(9.99);
+  });
+
   it("keeps every dot in its own slice at the oldest edge too", () => {
     // The same run against the other end of the window, where the clamp ran
     // the other way and put the two oldest dots in one band.
@@ -216,7 +237,7 @@ describe("ScoreChart", () => {
     const dots = dotXs(container);
     expect(bandAt(targets, dots[0])).toBe(0);
     for (const x of dots.slice(1)) {
-      expect(bandAt(targets, x)).toBeGreaterThanOrEqual(1);
+      expect(bandAt(targets, x)).toBeGreaterThan(0);
     }
 
     // Still one slice per log, still in plot order, each selecting its own.
